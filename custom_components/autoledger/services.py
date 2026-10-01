@@ -23,7 +23,7 @@ SERVICE_SYNC_SCHEMA = vol.Schema(
 
 SERVICE_SUBMIT_CHARGE_SCHEMA = vol.Schema(
     {
-        vol.Required("vehicle_id"): cv.string,
+        vol.Optional("vehicle_id", default=None): vol.Any(cv.string, None),
         vol.Required("energy_kwh"): vol.Coerce(float),
         vol.Optional("cost"): vol.Any(vol.Coerce(float), None),
         vol.Optional("odometer_km"): vol.Any(vol.Coerce(float), None),
@@ -59,7 +59,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
 
     async def async_handle_submit_charge(call: ServiceCall) -> None:
         """Handle the submit_charge service call."""
-        vehicle_id = call.data["vehicle_id"]
+        vehicle_id = call.data.get("vehicle_id")
         kwh = call.data["energy_kwh"]
         cost = call.data.get("cost")
         odometer_km = call.data.get("odometer_km")
@@ -74,7 +74,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
 
         for _entry_id, data in domain_data.items():
             trackers = data.get("trackers", {})
-            if vehicle_id in trackers:
+            if vehicle_id and vehicle_id in trackers:
                 tracker = trackers[vehicle_id]
                 await tracker.async_submit_manual_charge(
                     kwh=kwh,
@@ -89,7 +89,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
                 handled = True
                 break
 
-            # If vehicle not in trackers, use api_client directly
+            # If vehicle not in trackers (or vehicle_id is None for unassigned), use api_client directly
             client = data.get("client")
             if client:
                 await client.async_submit_charge(
@@ -110,9 +110,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
                 break
 
         if not handled:
-            _LOGGER.error(
-                "Cannot submit charge: Vehicle %s not found in any AutoLedger entry", vehicle_id
-            )
+            _LOGGER.error("Cannot submit charge: No active AutoLedger client found")
 
     if not hass.services.has_service(DOMAIN, SERVICE_SYNC):
         hass.services.async_register(

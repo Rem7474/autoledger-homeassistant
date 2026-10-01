@@ -23,17 +23,21 @@ async def test_services_registration_and_calls(mock_hass):
     assert mock_hass.services.has_service(DOMAIN, SERVICE_SYNC)
     assert mock_hass.services.has_service(DOMAIN, SERVICE_SUBMIT_CHARGE)
 
-    # Mock coordinator and tracker
+    # Mock coordinator, tracker, and client
     coordinator = MagicMock()
     coordinator.async_request_refresh = AsyncMock()
 
     tracker = MagicMock()
     tracker.async_submit_manual_charge = AsyncMock(return_value={"status": "ok"})
 
+    client = MagicMock()
+    client.async_submit_charge = AsyncMock(return_value={"status": "ok"})
+
     mock_hass.data[DOMAIN] = {
         "entry_1": {
             "coordinator": coordinator,
             "trackers": {"v-service-1": tracker},
+            "client": client,
         }
     }
 
@@ -44,7 +48,7 @@ async def test_services_registration_and_calls(mock_hass):
     await sync_handler(call_sync)
     assert coordinator.async_request_refresh.call_count == 1
 
-    # Test submit_charge service
+    # Test submit_charge service with tracked vehicle
     submit_handler = mock_hass.services._services[(DOMAIN, SERVICE_SUBMIT_CHARGE)]
     call_submit = MagicMock()
     call_submit.data = {
@@ -59,6 +63,18 @@ async def test_services_registration_and_calls(mock_hass):
     await submit_handler(call_submit)
     assert tracker.async_submit_manual_charge.call_count == 1
     assert tracker.async_submit_manual_charge.call_args[1]["kwh"] == 35.5
+
+    # Test submit_charge service with unassigned vehicle (vehicle_id=None)
+    call_unassigned = MagicMock()
+    call_unassigned.data = {
+        "vehicle_id": None,
+        "energy_kwh": 22.0,
+        "location": "home",
+    }
+    await submit_handler(call_unassigned)
+    assert client.async_submit_charge.call_count == 1
+    assert client.async_submit_charge.call_args[1]["vehicle_id"] is None
+    assert client.async_submit_charge.call_args[1]["kwh"] == 22.0
 
     # Test unload
     mock_hass.data[DOMAIN].clear()

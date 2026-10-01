@@ -104,9 +104,6 @@
           "energy_meter_type": "Energy Counter Mode",
           "debounce_seconds": "Solar Anti-Bounce Debounce (seconds)",
           "charging_location": "Default Location Tag"
-        },
-        "error": {
-          "invalid_name": "Please enter a valid charger name."
         }
       },
       "charger_step2": {
@@ -116,10 +113,6 @@
           "assignment_mode": "Assignment Strategy",
           "linked_vehicle_id": "Fixed Linked Vehicle",
           "vehicle_select_entity": "Dynamic Vehicle Selector Entity"
-        },
-        "error": {
-          "select_vehicle": "Please select a vehicle for fixed assignment.",
-          "select_entity": "Please select an entity for dynamic selection."
         }
       }
     },

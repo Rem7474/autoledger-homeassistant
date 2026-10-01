@@ -16,8 +16,8 @@ submit_charge:
   fields:
     vehicle_id:
       name: Vehicle ID
-      description: The AutoLedger Vehicle ID (UUID) to log this charging session against.
-      required: true
+      description: The AutoLedger Vehicle ID (UUID) to log this charging session against. Leave empty to submit as a pending charge to qualify later.
+      required: false
       example: "c1f7a4b0-9b3e-4b2a-8921-729c4ef76a01"
       selector:
         text:

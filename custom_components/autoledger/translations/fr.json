@@ -104,9 +104,6 @@
           "energy_meter_type": "Mode du compteur d'énergie",
           "debounce_seconds": "Temporisation anti-rebond solaire (secondes)",
           "charging_location": "Lieu de charge (tag)"
-        },
-        "error": {
-          "invalid_name": "Veuillez saisir un nom valide pour la borne."
         }
       },
       "charger_step2": {
@@ -116,10 +113,6 @@
           "assignment_mode": "Stratégie d'attribution",
           "linked_vehicle_id": "Véhicule lié fixe",
           "vehicle_select_entity": "Entité de sélection dynamique"
-        },
-        "error": {
-          "select_vehicle": "Veuillez sélectionner un véhicule pour l'attribution fixe.",
-          "select_entity": "Veuillez sélectionner une entité pour la sélection dynamique."
         }
       }
     },
