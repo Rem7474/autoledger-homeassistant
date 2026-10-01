@@ -14,9 +14,17 @@ _LOGGER = logging.getLogger(__name__)
 
 SERVICE_SYNC = "sync"
 SERVICE_SUBMIT_CHARGE = "submit_charge"
+SERVICE_SYNC_ODOMETER = "sync_odometer"
 
 SERVICE_SYNC_SCHEMA = vol.Schema(
     {
+        vol.Optional("entry_id"): cv.string,
+    }
+)
+
+SERVICE_SYNC_ODOMETER_SCHEMA = vol.Schema(
+    {
+        vol.Optional("vehicle_id"): cv.string,
         vol.Optional("entry_id"): cv.string,
     }
 )
@@ -112,6 +120,31 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         if not handled:
             _LOGGER.error("Cannot submit charge: No active AutoLedger client found")
 
+    async def async_handle_sync_odometer(call: ServiceCall) -> None:
+        """Handle the sync_odometer service call."""
+        vehicle_id = call.data.get("vehicle_id")
+        entry_id = call.data.get("entry_id")
+        domain_data = hass.data.get(DOMAIN, {})
+
+        synced = False
+        for e_id, data in domain_data.items():
+            if entry_id and e_id != entry_id:
+                continue
+            odometer_tracker = data.get("odometer_tracker")
+            if odometer_tracker:
+                if vehicle_id:
+                    res = await odometer_tracker.async_sync_vehicle(
+                        vehicle_id, reason="service_call"
+                    )
+                    synced = synced or res
+                else:
+                    for vid in odometer_tracker.vehicles_config:
+                        res = await odometer_tracker.async_sync_vehicle(vid, reason="service_call")
+                        synced = synced or res
+
+        if not synced:
+            _LOGGER.warning("No vehicle odometer synced via service call")
+
     if not hass.services.has_service(DOMAIN, SERVICE_SYNC):
         hass.services.async_register(
             DOMAIN,
@@ -128,6 +161,14 @@ async def async_setup_services(hass: HomeAssistant) -> None:
             schema=SERVICE_SUBMIT_CHARGE_SCHEMA,
         )
 
+    if not hass.services.has_service(DOMAIN, SERVICE_SYNC_ODOMETER):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_SYNC_ODOMETER,
+            async_handle_sync_odometer,
+            schema=SERVICE_SYNC_ODOMETER_SCHEMA,
+        )
+
 
 async def async_unload_services(hass: HomeAssistant) -> None:
     """Unload AutoLedger services if no entries remain."""
@@ -139,3 +180,6 @@ async def async_unload_services(hass: HomeAssistant) -> None:
 
     if hass.services.has_service(DOMAIN, SERVICE_SUBMIT_CHARGE):
         hass.services.async_remove(DOMAIN, SERVICE_SUBMIT_CHARGE)
+
+    if hass.services.has_service(DOMAIN, SERVICE_SYNC_ODOMETER):
+        hass.services.async_remove(DOMAIN, SERVICE_SYNC_ODOMETER)

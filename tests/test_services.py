@@ -22,13 +22,18 @@ async def test_services_registration_and_calls(mock_hass):
 
     assert mock_hass.services.has_service(DOMAIN, SERVICE_SYNC)
     assert mock_hass.services.has_service(DOMAIN, SERVICE_SUBMIT_CHARGE)
+    assert mock_hass.services.has_service(DOMAIN, "sync_odometer")
 
-    # Mock coordinator, tracker, and client
+    # Mock coordinator, tracker, odometer_tracker, and client
     coordinator = MagicMock()
     coordinator.async_request_refresh = AsyncMock()
 
     tracker = MagicMock()
     tracker.async_submit_manual_charge = AsyncMock(return_value={"status": "ok"})
+
+    odometer_tracker = MagicMock()
+    odometer_tracker.vehicles_config = {"v-service-1": {}}
+    odometer_tracker.async_sync_vehicle = AsyncMock(return_value=True)
 
     client = MagicMock()
     client.async_submit_charge = AsyncMock(return_value={"status": "ok"})
@@ -37,6 +42,7 @@ async def test_services_registration_and_calls(mock_hass):
         "entry_1": {
             "coordinator": coordinator,
             "trackers": {"v-service-1": tracker},
+            "odometer_tracker": odometer_tracker,
             "client": client,
         }
     }
@@ -47,6 +53,14 @@ async def test_services_registration_and_calls(mock_hass):
     call_sync.data = {}
     await sync_handler(call_sync)
     assert coordinator.async_request_refresh.call_count == 1
+
+    # Test sync_odometer service
+    sync_odo_handler = mock_hass.services._services[(DOMAIN, "sync_odometer")]
+    call_sync_odo = MagicMock()
+    call_sync_odo.data = {"vehicle_id": "v-service-1"}
+    await sync_odo_handler(call_sync_odo)
+    assert odometer_tracker.async_sync_vehicle.call_count == 1
+    assert odometer_tracker.async_sync_vehicle.call_args[0][0] == "v-service-1"
 
     # Test submit_charge service with tracked vehicle
     submit_handler = mock_hass.services._services[(DOMAIN, SERVICE_SUBMIT_CHARGE)]
@@ -81,3 +95,4 @@ async def test_services_registration_and_calls(mock_hass):
     await async_unload_services(mock_hass)
     assert not mock_hass.services.has_service(DOMAIN, SERVICE_SYNC)
     assert not mock_hass.services.has_service(DOMAIN, SERVICE_SUBMIT_CHARGE)
+    assert not mock_hass.services.has_service(DOMAIN, "sync_odometer")

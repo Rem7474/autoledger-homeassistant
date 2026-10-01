@@ -97,3 +97,22 @@ submit_charge:
       example: "home"
       selector:
         text:
+
+sync_odometer:
+  name: Sync Vehicle Odometer
+  description: Forces an immediate push of the current vehicle odometer reading to AutoLedger without waiting for trip-end stabilization.
+  fields:
+    vehicle_id:
+      name: Vehicle ID
+      description: The AutoLedger Vehicle ID to sync. Leave empty to sync all configured vehicles.
+      required: false
+      example: "c1f7a4b0-9b3e-4b2a-8921-729c4ef76a01"
+      selector:
+        text:
+    entry_id:
+      name: Config Entry ID
+      description: Optional ID of the AutoLedger configuration entry. If omitted, all entries are processed.
+      required: false
+      example: "01J9XYZABCD..."
+      selector:
+        text:

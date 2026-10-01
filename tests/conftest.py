@@ -416,9 +416,32 @@ if "homeassistant" not in sys.modules:
 class MockState:
     """Mock Home Assistant State object."""
 
-    def __init__(self, state: str, attributes: dict[str, Any] | None = None) -> None:
-        self.state = state
-        self.attributes = attributes or {}
+    def __init__(
+        self,
+        entity_id_or_state: str,
+        state_or_attributes: Any = None,
+        attributes: dict[str, Any] | None = None,
+    ) -> None:
+        if attributes is not None:
+            self.entity_id = entity_id_or_state
+            self.state = str(state_or_attributes)
+            self.attributes = attributes
+        elif isinstance(state_or_attributes, dict):
+            self.entity_id = ""
+            self.state = entity_id_or_state
+            self.attributes = state_or_attributes
+        elif state_or_attributes is not None:
+            self.entity_id = entity_id_or_state
+            self.state = str(state_or_attributes)
+            self.attributes = {}
+        else:
+            self.entity_id = ""
+            self.state = entity_id_or_state
+            self.attributes = {}
+
+
+if "homeassistant.core" in sys.modules:
+    sys.modules["homeassistant.core"].State = MockState
 
 
 class MockStates:

@@ -40,6 +40,7 @@ from .const import (
     SYNC_STATUS_OK,
     SYNC_STATUS_PENDING,
 )
+from .odometer_tracker import get_entity_odometer_km
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -438,7 +439,7 @@ class AutoLedgerChargerTracker:
                 if soc_start is None:
                     soc_start = self._get_entity_int_state(vconf.get(CONF_BATTERY_SOC_ENTITY))
                 soc_end = self._get_entity_int_state(vconf.get(CONF_BATTERY_SOC_ENTITY))
-                odometer_end = self._get_entity_numeric_state(vconf.get(CONF_ODOMETER_ENTITY))
+                odometer_end = get_entity_odometer_km(self.hass, vconf.get(CONF_ODOMETER_ENTITY))
                 if odometer_end is None:
                     odometer_end = self._vehicles_odometer_start.get(
                         resolved_vehicle_id, self.odometer_start
@@ -471,7 +472,9 @@ class AutoLedgerChargerTracker:
                     if soc_start is None:
                         soc_start = self._get_entity_int_state(vconf.get(CONF_BATTERY_SOC_ENTITY))
                     soc_end = self._get_entity_int_state(vconf.get(CONF_BATTERY_SOC_ENTITY))
-                    odometer_end = self._get_entity_numeric_state(vconf.get(CONF_ODOMETER_ENTITY))
+                    odometer_end = get_entity_odometer_km(
+                        self.hass, vconf.get(CONF_ODOMETER_ENTITY)
+                    )
                     if odometer_end is None:
                         odometer_end = self._vehicles_odometer_start.get(matched_id)
 
@@ -494,7 +497,7 @@ class AutoLedgerChargerTracker:
                 if soc_start is None:
                     soc_start = self._get_entity_int_state(vconf.get(CONF_BATTERY_SOC_ENTITY))
                 soc_end = self._get_entity_int_state(vconf.get(CONF_BATTERY_SOC_ENTITY))
-                odometer_end = self._get_entity_numeric_state(vconf.get(CONF_ODOMETER_ENTITY))
+                odometer_end = get_entity_odometer_km(self.hass, vconf.get(CONF_ODOMETER_ENTITY))
                 if odometer_end is None:
                     odometer_end = self._vehicles_odometer_start.get(target_vid)
 
@@ -547,6 +550,10 @@ class AutoLedgerChargerTracker:
 
             if self.coordinator is not None:
                 await self.coordinator.async_request_refresh()
+                if resolved_vehicle_id and odometer_end is not None:
+                    odometer_tracker = getattr(self.coordinator, "odometer_tracker", None)
+                    if odometer_tracker:
+                        odometer_tracker.set_last_synced_odometer(resolved_vehicle_id, odometer_end)
 
         except Exception as err:
             self.sync_status = SYNC_STATUS_ERROR

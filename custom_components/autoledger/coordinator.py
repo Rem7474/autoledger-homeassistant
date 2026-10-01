@@ -39,9 +39,10 @@ class AutoLedgerDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.client = client
         self.entry_id = entry_id
         self.vehicles_config = vehicles_config
+        self.odometer_tracker: Any = None
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch data from AutoLedger API."""
+        """Fetch data from AutoLedger API and sync periodic telemetry."""
         try:
             vehicles_list = await self.client.async_get_vehicles()
             vehicles_by_id: dict[str, dict[str, Any]] = {
@@ -62,6 +63,12 @@ class AutoLedgerDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 except AutoLedgerError as err:
                     _LOGGER.warning("Failed to update metrics for vehicle %s: %s", vehicle_id, err)
                     metrics_by_id[vehicle_id] = {}
+
+            if self.odometer_tracker:
+                for vid, vdata in vehicles_by_id.items():
+                    backend_odo = vdata.get("current_odometer")
+                    if backend_odo and float(backend_odo) > 0:
+                        self.odometer_tracker.set_last_synced_odometer(str(vid), float(backend_odo))
 
             return {
                 "vehicles": vehicles_by_id,

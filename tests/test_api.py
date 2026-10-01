@@ -259,3 +259,44 @@ async def test_post_event_none_vehicle_id_no_fallback_on_404(mock_session):
     assert exc_info.value.status_code == 404
     # Ensure only 1 call was made (no fallback call to /api/vehicles/{id}/charges)
     assert mock_session.request.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_update_odometer_success(mock_session):
+    """Test successful odometer update via /api/integrations/homeassistant/event."""
+    mock_session.request.return_value = MockClientResponse(
+        status=200, json_data={"status": "recorded"}
+    )
+    client = AutoLedgerApiClient("http://autoledger.local:8080", "test_key", mock_session)
+
+    res = await client.async_update_odometer("veh-123", 52300.4)
+    assert res == {"status": "recorded"}
+    assert (
+        mock_session.request.call_args[1]["url"]
+        == "http://autoledger.local:8080/api/integrations/homeassistant/event"
+    )
+    assert mock_session.request.call_args[1]["json"]["data"]["odometer_km"] == 52300.4
+    assert mock_session.request.call_args[1]["json"]["event_type"] == "odometer_update"
+
+
+@pytest.mark.asyncio
+async def test_update_odometer_fallback_on_404(mock_session):
+    """Test odometer update falls back to /api/vehicles/{id}/odometer-checkpoints when event endpoint is 404."""
+    resp_404 = MockClientResponse(status=404, text_data="Not Found")
+    resp_fallback = MockClientResponse(status=201, json_data={"id": "cp-1", "odometer": 52300.4})
+    mock_session.request.side_effect = [resp_404, resp_fallback]
+
+    client = AutoLedgerApiClient("http://autoledger.local:8080", "test_key", mock_session)
+    res = await client.async_update_odometer("veh-123", 52300.4)
+
+    assert res == {"id": "cp-1", "odometer": 52300.4}
+    assert mock_session.request.call_count == 2
+    assert (
+        mock_session.request.call_args_list[0][1]["url"]
+        == "http://autoledger.local:8080/api/integrations/homeassistant/event"
+    )
+    assert (
+        mock_session.request.call_args_list[1][1]["url"]
+        == "http://autoledger.local:8080/api/vehicles/veh-123/odometer-checkpoints"
+    )
+    assert mock_session.request.call_args_list[1][1]["json"]["odometer"] == 52300.4
