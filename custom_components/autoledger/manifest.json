@@ -1,0 +1,11 @@
+{
+  "domain": "autoledger",
+  "name": "AutoLedger",
+  "codeowners": ["@Rem7474"],
+  "config_flow": true,
+  "documentation": "https://github.com/Rem7474/autoledger-homeassistant",
+  "issue_tracker": "https://github.com/Rem7474/autoledger-homeassistant/issues",
+  "iot_class": "cloud_polling",
+  "version": "1.0.0",
+  "requirements": []
+}

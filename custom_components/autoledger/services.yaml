@@ -1,0 +1,99 @@
+sync:
+  name: Sync with AutoLedger
+  description: Forces an immediate refresh of vehicle metrics and charge statistics from the AutoLedger server.
+  fields:
+    entry_id:
+      name: Config Entry ID
+      description: Optional ID of the AutoLedger configuration entry to sync. If omitted, all entries are refreshed.
+      required: false
+      example: "01J9XYZABCD..."
+      selector:
+        text:
+
+submit_charge:
+  name: Submit Charging Session
+  description: Manually submit or automate logging of a charging session into AutoLedger.
+  fields:
+    vehicle_id:
+      name: Vehicle ID
+      description: The AutoLedger Vehicle ID (UUID) to log this charging session against.
+      required: true
+      example: "c1f7a4b0-9b3e-4b2a-8921-729c4ef76a01"
+      selector:
+        text:
+    energy_kwh:
+      name: Energy Added (kWh)
+      description: Amount of energy transferred during the charging session in kilowatt-hours.
+      required: true
+      example: 32.45
+      selector:
+        number:
+          min: 0.01
+          max: 500
+          step: 0.01
+          unit_of_measurement: "kWh"
+    cost:
+      name: Total Cost
+      description: Monetary cost of this session (optional, calculated by AutoLedger if left empty).
+      required: false
+      example: 7.50
+      selector:
+        number:
+          min: 0.0
+          max: 1000.0
+          step: 0.01
+    odometer_km:
+      name: Odometer (km)
+      description: Current vehicle odometer reading in kilometers.
+      required: false
+      example: 45120.0
+      selector:
+        number:
+          min: 0
+          max: 1000000
+          step: 1
+          unit_of_measurement: "km"
+    soc_start:
+      name: Initial SoC (%)
+      description: Battery State of Charge at the beginning of the charge session.
+      required: false
+      example: 20
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          unit_of_measurement: "%"
+    soc_end:
+      name: Final SoC (%)
+      description: Battery State of Charge at the end of the charge session.
+      required: false
+      example: 80
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          unit_of_measurement: "%"
+    start_time:
+      name: Start Time
+      description: Timestamp when charging started (ISO 8601 UTC).
+      required: false
+      example: "2026-10-01T06:00:00Z"
+      selector:
+        text:
+    end_time:
+      name: End Time
+      description: Timestamp when charging ended (ISO 8601 UTC).
+      required: false
+      example: "2026-10-01T09:44:00Z"
+      selector:
+        text:
+    location:
+      name: Location
+      description: Charging location tag (e.g., home, work, public).
+      required: false
+      default: "home"
+      example: "home"
+      selector:
+        text:

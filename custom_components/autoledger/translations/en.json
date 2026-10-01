@@ -1,0 +1,81 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to AutoLedger",
+        "description": "Enter your AutoLedger server details and personal access token.",
+        "data": {
+          "host": "Server URL",
+          "api_key": "API Token",
+          "verify_ssl": "Verify SSL Certificate"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to the AutoLedger server. Check host URL.",
+      "invalid_auth": "Authentication failed. Please verify your API token.",
+      "unknown": "Unexpected error occurred."
+    },
+    "abort": {
+      "already_configured": "This AutoLedger server is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Manage AutoLedger Vehicles",
+        "menu_options": {
+          "add_vehicle": "Add a vehicle mapping",
+          "edit_vehicle": "Edit existing vehicle mapping",
+          "remove_vehicle": "Remove vehicle mapping"
+        }
+      },
+      "add_vehicle": {
+        "title": "Add Vehicle Mapping",
+        "description": "Select an AutoLedger vehicle and an associated Home Assistant device to assist in mapping.",
+        "data": {
+          "vehicle_id": "AutoLedger Vehicle",
+          "device_id": "Home Assistant Device (Optional)"
+        }
+      },
+      "edit_vehicle": {
+        "title": "Edit Vehicle Mapping",
+        "description": "Select a vehicle to edit its telemetry and energy configuration.",
+        "data": {
+          "vehicle_id": "Vehicle"
+        }
+      },
+      "remove_vehicle": {
+        "title": "Remove Vehicle Mapping",
+        "description": "Select the vehicle mapping you wish to remove.",
+        "data": {
+          "vehicle_id": "Vehicle to remove"
+        }
+      },
+      "vehicle_mapping": {
+        "title": "Configure Vehicle Entities",
+        "description": "Map Home Assistant telemetry and charger entities to this AutoLedger vehicle.",
+        "data": {
+          "charging_status_entity": "Charging Status Sensor",
+          "battery_soc_entity": "Battery State of Charge (%)",
+          "odometer_entity": "Vehicle Odometer (km)",
+          "energy_meter_entity": "Charging Energy Sensor (kWh)",
+          "energy_meter_type": "Energy Sensor Counter Mode",
+          "location_entity": "Vehicle Tracker / Location Entity",
+          "charging_location": "Default Location Tag",
+          "debounce_seconds": "Solar Anti-Bounce Debounce (seconds)"
+        }
+      }
+    }
+  },
+  "services": {
+    "sync": {
+      "name": "Sync with AutoLedger",
+      "description": "Forces an immediate refresh of vehicle metrics and charge statistics from the AutoLedger server."
+    },
+    "submit_charge": {
+      "name": "Submit Charging Session",
+      "description": "Manually submit or automate logging of a charging session into AutoLedger."
+    }
+  }
+}

@@ -1,0 +1,81 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connexion à AutoLedger",
+        "description": "Renseignez l'URL de votre serveur AutoLedger et votre jeton d'accès personnel.",
+        "data": {
+          "host": "URL du serveur",
+          "api_key": "Jeton API (Token)",
+          "verify_ssl": "Vérifier le certificat SSL"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Échec de connexion au serveur AutoLedger. Vérifiez l'URL de l'hôte.",
+      "invalid_auth": "Authentification refusée. Veuillez vérifier votre jeton API.",
+      "unknown": "Une erreur inattendue est survenue."
+    },
+    "abort": {
+      "already_configured": "Cette instance AutoLedger est déjà configurée."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Gestion des Véhicules AutoLedger",
+        "menu_options": {
+          "add_vehicle": "Ajouter un mapping de véhicule",
+          "edit_vehicle": "Modifier un véhicule existant",
+          "remove_vehicle": "Retirer un véhicule"
+        }
+      },
+      "add_vehicle": {
+        "title": "Associer un Véhicule",
+        "description": "Sélectionnez un véhicule AutoLedger et l'appareil Home Assistant correspondant pour pré-remplir les capteurs.",
+        "data": {
+          "vehicle_id": "Véhicule AutoLedger",
+          "device_id": "Appareil Home Assistant (Optionnel)"
+        }
+      },
+      "edit_vehicle": {
+        "title": "Modifier un Véhicule",
+        "description": "Sélectionnez un véhicule pour mettre à jour la configuration de télématique et d'énergie.",
+        "data": {
+          "vehicle_id": "Véhicule"
+        }
+      },
+      "remove_vehicle": {
+        "title": "Supprimer un Véhicule",
+        "description": "Sélectionnez le véhicule dont vous souhaitez retirer l'association.",
+        "data": {
+          "vehicle_id": "Véhicule à retirer"
+        }
+      },
+      "vehicle_mapping": {
+        "title": "Configuration des Capteurs",
+        "description": "Associez les capteurs de télématique et de borne de recharge Home Assistant à ce véhicule AutoLedger.",
+        "data": {
+          "charging_status_entity": "Capteur d'état de charge (Requis)",
+          "battery_soc_entity": "Niveau de batterie SoC (%)",
+          "odometer_entity": "Odomètre du véhicule (km)",
+          "energy_meter_entity": "Capteur d'énergie de charge (kWh)",
+          "energy_meter_type": "Mode du compteur d'énergie",
+          "location_entity": "Capteur d'emplacement / Tracker",
+          "charging_location": "Emplacement par défaut (ex: home)",
+          "debounce_seconds": "Temporisation anti-rebond solaire (secondes)"
+        }
+      }
+    }
+  },
+  "services": {
+    "sync": {
+      "name": "Synchroniser avec AutoLedger",
+      "description": "Force le rafraîchissement immédiat des métriques et historiques de charge depuis le serveur AutoLedger."
+    },
+    "submit_charge": {
+      "name": "Envoyer une session de charge",
+      "description": "Envoie manuellement ou via automatisation une session de recharge complète à AutoLedger."
+    }
+  }
+}
