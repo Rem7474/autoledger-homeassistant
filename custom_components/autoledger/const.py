@@ -63,6 +63,9 @@ MIN_DEBOUNCE_SECONDS = 15
 MAX_DEBOUNCE_SECONDS = 300
 
 # Event types
+# Routes an API token opens on the AutoLedger server
+INTEGRATION_API = "/api/integrations/homeassistant"
+
 EVENT_TYPE_CHARGING_SESSION_END = "charging_session_end"
 EVENT_TYPE_ODOMETER_UPDATE = "odometer_update"
 
