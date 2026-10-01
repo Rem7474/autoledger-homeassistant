@@ -8,7 +8,6 @@ from typing import Any
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
-    SensorEntityDescription,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
@@ -27,8 +26,6 @@ from .const import (
     ATTR_LAST_SUCCESSFUL_SYNC,
     ATTR_PENDING_EVENTS_COUNT,
     ATTR_SESSION_START_TIME,
-    CONF_HOST,
-    CONF_VEHICLE_ID,
     CONF_VEHICLE_NAME,
     CONF_VEHICLES,
     DOMAIN,
@@ -46,7 +43,11 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up AutoLedger sensors based on a config entry."""
-    data = entry.runtime_data if hasattr(entry, "runtime_data") and entry.runtime_data else hass.data[DOMAIN][entry.entry_id]
+    data = (
+        entry.runtime_data
+        if hasattr(entry, "runtime_data") and entry.runtime_data
+        else hass.data[DOMAIN][entry.entry_id]
+    )
     coordinator: AutoLedgerDataUpdateCoordinator = data["coordinator"]
     trackers: dict[str, AutoLedgerSessionTracker] = data["trackers"]
 

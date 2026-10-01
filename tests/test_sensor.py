@@ -51,9 +51,7 @@ async def test_sensors_setup_entry(mock_hass):
 
     coordinator = MagicMock()
     coordinator.data = {
-        "vehicles": {
-            vehicle_id: {"make": "Tesla", "model": "Model Y"}
-        },
+        "vehicles": {vehicle_id: {"make": "Tesla", "model": "Model Y"}},
         "metrics": {
             vehicle_id: {
                 "last_charge_cost": 11.20,
@@ -78,6 +76,7 @@ async def test_sensors_setup_entry(mock_hass):
     mock_hass.data[DOMAIN] = {entry.entry_id: entry.runtime_data}
 
     created_entities = []
+
     def add_entities(entities):
         created_entities.extend(entities)
 
@@ -86,7 +85,9 @@ async def test_sensors_setup_entry(mock_hass):
     assert len(created_entities) == 4
 
     cost_sensor = next(e for e in created_entities if isinstance(e, AutoLedgerLastChargeCostSensor))
-    efficiency_sensor = next(e for e in created_entities if isinstance(e, AutoLedgerCostPer100KmSensor))
+    efficiency_sensor = next(
+        e for e in created_entities if isinstance(e, AutoLedgerCostPer100KmSensor)
+    )
     sync_sensor = next(e for e in created_entities if isinstance(e, AutoLedgerSyncStatusSensor))
     state_sensor = next(e for e in created_entities if isinstance(e, AutoLedgerChargingStateSensor))
 

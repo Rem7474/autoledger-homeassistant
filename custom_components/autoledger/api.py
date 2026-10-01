@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any
 
@@ -131,12 +130,16 @@ class AutoLedgerApiClient:
                     return await response.json()
                 return await response.text()
 
-        except (aiohttp.ClientConnectorError, aiohttp.ClientOSError, aiohttp.ServerDisconnectedError) as err:
+        except (
+            aiohttp.ClientConnectorError,
+            aiohttp.ClientOSError,
+            aiohttp.ServerDisconnectedError,
+        ) as err:
             _LOGGER.error("Cannot connect to AutoLedger at %s: %s", url, err)
             raise AutoLedgerConnectionError(
                 f"Failed to connect to AutoLedger at {url}: {err}"
             ) from err
-        except asyncio.TimeoutError as err:
+        except TimeoutError as err:
             _LOGGER.error("Timeout connecting to AutoLedger at %s", url)
             raise AutoLedgerTimeoutError(
                 f"Timeout after {DEFAULT_TIMEOUT}s connecting to AutoLedger at {url}"

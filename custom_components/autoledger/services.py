@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -73,7 +72,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         domain_data = hass.data.get(DOMAIN, {})
         handled = False
 
-        for entry_id, data in domain_data.items():
+        for _entry_id, data in domain_data.items():
             trackers = data.get("trackers", {})
             if vehicle_id in trackers:
                 tracker = trackers[vehicle_id]
@@ -111,7 +110,9 @@ async def async_setup_services(hass: HomeAssistant) -> None:
                 break
 
         if not handled:
-            _LOGGER.error("Cannot submit charge: Vehicle %s not found in any AutoLedger entry", vehicle_id)
+            _LOGGER.error(
+                "Cannot submit charge: Vehicle %s not found in any AutoLedger entry", vehicle_id
+            )
 
     if not hass.services.has_service(DOMAIN, SERVICE_SYNC):
         hass.services.async_register(

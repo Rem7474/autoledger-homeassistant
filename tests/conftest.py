@@ -3,20 +3,20 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
-from enum import Enum
 import inspect
 import sys
+from datetime import UTC, datetime
+from enum import StrEnum
 from types import ModuleType
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
 # Mock voluptuous if not installed
 if "voluptuous" not in sys.modules:
     try:
-        import voluptuous
+        import voluptuous  # noqa: F401
     except ImportError:
         vol = ModuleType("voluptuous")
 
@@ -69,7 +69,7 @@ if "voluptuous" not in sys.modules:
 # Check if homeassistant is already installed; if not, register lightweight mocks
 if "homeassistant" not in sys.modules:
     try:
-        import homeassistant
+        import homeassistant  # noqa: F401
     except ImportError:
         # Create mock module hierarchy
         ha = ModuleType("homeassistant")
@@ -94,7 +94,7 @@ if "homeassistant" not in sys.modules:
         ha.components.binary_sensor = ModuleType("homeassistant.components.binary_sensor")
         ha.components.diagnostics = ModuleType("homeassistant.components.diagnostics")
 
-        class Platform(str, Enum):
+        class Platform(StrEnum):
             SENSOR = "sensor"
 
         ha.const.Platform = Platform
@@ -115,7 +115,7 @@ if "homeassistant" not in sys.modules:
         ha.core.ServiceCall = MagicMock
 
         def utcnow():
-            return datetime.now(timezone.utc)
+            return datetime.now(UTC)
 
         ha.util.dt.utcnow = utcnow
 
@@ -165,13 +165,13 @@ if "homeassistant" not in sys.modules:
         ha.helpers.update_coordinator.DataUpdateCoordinator = DataUpdateCoordinator
         ha.helpers.update_coordinator.CoordinatorEntity = CoordinatorEntity
 
-        class SensorDeviceClass(str, Enum):
+        class SensorDeviceClass(StrEnum):
             MONETARY = "monetary"
             BATTERY = "battery"
             DISTANCE = "distance"
             ENERGY = "energy"
 
-        class BinarySensorDeviceClass(str, Enum):
+        class BinarySensorDeviceClass(StrEnum):
             BATTERY_CHARGING = "battery_charging"
             PLUG = "plug"
 
@@ -198,6 +198,7 @@ if "homeassistant" not in sys.modules:
 
         class ConfigFlow:
             VERSION = 1
+
             def __init_subclass__(cls, domain=None, **kwargs):
                 super().__init_subclass__(**kwargs)
                 cls.domain = domain
@@ -209,7 +210,12 @@ if "homeassistant" not in sys.modules:
                 pass
 
             def async_show_form(self, step_id, data_schema=None, errors=None):
-                return {"type": "form", "step_id": step_id, "data_schema": data_schema, "errors": errors or {}}
+                return {
+                    "type": "form",
+                    "step_id": step_id,
+                    "data_schema": data_schema,
+                    "errors": errors or {},
+                }
 
             def async_create_entry(self, title, data):
                 return {"type": "create_entry", "title": title, "data": data}
@@ -222,13 +228,25 @@ if "homeassistant" not in sys.modules:
                 return {"type": "menu", "step_id": step_id, "menu_options": menu_options}
 
             def async_show_form(self, step_id, data_schema=None, errors=None):
-                return {"type": "form", "step_id": step_id, "data_schema": data_schema, "errors": errors or {}}
+                return {
+                    "type": "form",
+                    "step_id": step_id,
+                    "data_schema": data_schema,
+                    "errors": errors or {},
+                }
 
             def async_create_entry(self, title, data):
                 return {"type": "create_entry", "title": title, "data": data}
 
         class ConfigEntry:
-            def __init__(self, entry_id="test_entry_id", domain="autoledger", title="AutoLedger", data=None, options=None):
+            def __init__(
+                self,
+                entry_id="test_entry_id",
+                domain="autoledger",
+                title="AutoLedger",
+                data=None,
+                options=None,
+            ):
                 self.entry_id = entry_id
                 self.domain = domain
                 self.title = title
@@ -316,7 +334,13 @@ if "homeassistant" not in sys.modules:
         def string(v):
             return str(v)
 
+        def config_entry_only_config_schema(domain):
+            return MagicMock()
+
         ha.helpers.config_validation.string = string
+        ha.helpers.config_validation.config_entry_only_config_schema = (
+            config_entry_only_config_schema
+        )
 
         # aiohttp_client
         def async_get_clientsession(hass):
@@ -426,4 +450,3 @@ def pytest_pyfunc_call(pyfuncitem):
         asyncio.run(testfunction(**testargs))
         return True
     return None
-

@@ -28,7 +28,6 @@ from custom_components.autoledger.const import (
     CONF_VEHICLE_ID,
     CONF_VEHICLES,
     CONF_VERIFY_SSL,
-    DOMAIN,
     ENERGY_METER_TYPE_TOTAL_INCREASING,
 )
 
@@ -158,13 +157,9 @@ async def test_options_flow_add_vehicle_workflow(mock_hass):
     handler.hass = mock_hass
 
     # Mock fetching vehicles from API
-    vehicles_api = [
-        {"id": "v-uuid-1", "make": "Tesla", "model": "Model Y", "name": "Family Car"}
-    ]
+    vehicles_api = [{"id": "v-uuid-1", "make": "Tesla", "model": "Model Y", "name": "Family Car"}]
 
-    with patch.object(
-        handler, "_get_api_client"
-    ) as mock_client_factory:
+    with patch.object(handler, "_get_api_client") as mock_client_factory:
         mock_client = AsyncMock()
         mock_client.async_get_vehicles.return_value = vehicles_api
         mock_client_factory.return_value = mock_client
@@ -220,9 +215,7 @@ async def test_options_flow_remove_vehicle(mock_hass):
     handler = AutoLedgerOptionsFlowHandler(entry)
     handler.hass = mock_hass
 
-    result = await handler.async_step_remove_vehicle(
-        user_input={CONF_VEHICLE_ID: "v-1"}
-    )
+    result = await handler.async_step_remove_vehicle(user_input={CONF_VEHICLE_ID: "v-1"})
     assert result["type"] == "create_entry"
     remaining = result["data"][CONF_VEHICLES]
     assert "v-1" not in remaining

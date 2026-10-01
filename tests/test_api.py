@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import aiohttp
 import pytest
 
 from custom_components.autoledger.api import (
     AutoLedgerApiClient,
-    AutoLedgerApiError,
     AutoLedgerAuthError,
     AutoLedgerConnectionError,
     AutoLedgerTimeoutError,
@@ -88,7 +86,7 @@ async def test_connection_auth_error(mock_session):
 @pytest.mark.asyncio
 async def test_connection_timeout(mock_session):
     """Test connection timeout handling."""
-    mock_session.request.side_effect = asyncio.TimeoutError()
+    mock_session.request.side_effect = TimeoutError()
     client = AutoLedgerApiClient("http://autoledger.local:8080", "test_key", mock_session)
 
     with pytest.raises(AutoLedgerTimeoutError):
@@ -160,7 +158,10 @@ async def test_post_event_success(mock_session):
 
     res = await client.async_post_event(payload)
     assert res == {"status": "ok"}
-    assert mock_session.request.call_args[1]["url"] == "http://autoledger.local:8080/api/integrations/homeassistant/event"
+    assert (
+        mock_session.request.call_args[1]["url"]
+        == "http://autoledger.local:8080/api/integrations/homeassistant/event"
+    )
 
 
 @pytest.mark.asyncio
@@ -195,7 +196,9 @@ async def test_post_event_fallback_to_charges(mock_session):
 @pytest.mark.asyncio
 async def test_submit_charge(mock_session):
     """Test async_submit_charge helper."""
-    mock_session.request.return_value = MockClientResponse(status=200, json_data={"status": "success"})
+    mock_session.request.return_value = MockClientResponse(
+        status=200, json_data={"status": "success"}
+    )
     client = AutoLedgerApiClient("http://autoledger.local:8080", "test_key", mock_session)
 
     res = await client.async_submit_charge(

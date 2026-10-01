@@ -68,9 +68,11 @@ async def test_session_start_idle_to_charging(mock_hass, mock_client):
     )
 
     listener_called = False
+
     def listener():
         nonlocal listener_called
         listener_called = True
+
     tracker.register_listener(listener)
 
     # Trigger charge started

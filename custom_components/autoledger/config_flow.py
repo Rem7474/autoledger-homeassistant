@@ -11,7 +11,8 @@ from homeassistant.components.binary_sensor import BinarySensorDeviceClass
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
-from homeassistant.helpers import entity_registry as er, selector
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import (
@@ -54,9 +55,7 @@ class AutoLedgerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Handle the initial user step."""
         errors: dict[str, str] = {}
 
@@ -104,7 +103,9 @@ class AutoLedgerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required(CONF_API_KEY): selector.TextSelector(
                     selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
                 ),
-                vol.Optional(CONF_VERIFY_SSL, default=DEFAULT_VERIFY_SSL): selector.BooleanSelector(),
+                vol.Optional(
+                    CONF_VERIFY_SSL, default=DEFAULT_VERIFY_SSL
+                ): selector.BooleanSelector(),
             }
         )
 
@@ -145,9 +146,7 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
             verify_ssl=verify_ssl,
         )
 
-    async def async_step_init(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Manage the main vehicle menu."""
         configured_vehicles = self._config_entry.options.get(CONF_VEHICLES, {})
 
@@ -160,9 +159,7 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
             menu_options=menu_options,
         )
 
-    async def async_step_add_vehicle(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    async def async_step_add_vehicle(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Step 1 of adding a vehicle: pick AutoLedger vehicle & HA device."""
         errors: dict[str, str] = {}
 
@@ -225,13 +222,9 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
             errors=errors,
         )
 
-    async def async_step_edit_vehicle(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    async def async_step_edit_vehicle(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Select a vehicle to edit."""
-        configured_vehicles: dict[str, Any] = self._config_entry.options.get(
-            CONF_VEHICLES, {}
-        )
+        configured_vehicles: dict[str, Any] = self._config_entry.options.get(CONF_VEHICLES, {})
 
         if not configured_vehicles:
             return await self.async_step_init()
@@ -360,9 +353,7 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
         prefill_charging_loc = self._temp_vehicle.get(
             CONF_CHARGING_LOCATION, DEFAULT_CHARGING_LOCATION
         )
-        prefill_debounce = self._temp_vehicle.get(
-            CONF_DEBOUNCE_SECONDS, DEFAULT_DEBOUNCE_SECONDS
-        )
+        prefill_debounce = self._temp_vehicle.get(CONF_DEBOUNCE_SECONDS, DEFAULT_DEBOUNCE_SECONDS)
 
         if device_id and not prefill_charging:
             ent_reg = er.async_get(self.hass)
@@ -373,9 +364,7 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
 
                 # Battery SoC
                 if not prefill_battery and (
-                    dev_class == SensorDeviceClass.BATTERY
-                    or "battery" in ent_id
-                    or "soc" in ent_id
+                    dev_class == SensorDeviceClass.BATTERY or "battery" in ent_id or "soc" in ent_id
                 ):
                     prefill_battery = ent_id
 
@@ -404,17 +393,15 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
 
         # Required charging status entity
         if prefill_charging:
-            fields[
-                vol.Required(CONF_CHARGING_STATUS_ENTITY, default=prefill_charging)
-            ] = selector.EntitySelector(
-                selector.EntitySelectorConfig(
-                    domain=["binary_sensor", "sensor"],
+            fields[vol.Required(CONF_CHARGING_STATUS_ENTITY, default=prefill_charging)] = (
+                selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain=["binary_sensor", "sensor"],
+                    )
                 )
             )
         else:
-            fields[
-                vol.Required(CONF_CHARGING_STATUS_ENTITY)
-            ] = selector.EntitySelector(
+            fields[vol.Required(CONF_CHARGING_STATUS_ENTITY)] = selector.EntitySelector(
                 selector.EntitySelectorConfig(
                     domain=["binary_sensor", "sensor"],
                 )
@@ -451,21 +438,21 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
         )
 
         # Energy Meter Type (Total Increasing vs Session)
-        fields[
-            vol.Optional(CONF_ENERGY_METER_TYPE, default=prefill_energy_type)
-        ] = selector.SelectSelector(
-            selector.SelectSelectorConfig(
-                options=[
-                    selector.SelectOptionDict(
-                        value=ENERGY_METER_TYPE_TOTAL_INCREASING,
-                        label="Total Increasing (Cumulative kWh)",
-                    ),
-                    selector.SelectOptionDict(
-                        value=ENERGY_METER_TYPE_SESSION,
-                        label="Session Energy (Resets per charge)",
-                    ),
-                ],
-                mode=selector.SelectSelectorMode.DROPDOWN,
+        fields[vol.Optional(CONF_ENERGY_METER_TYPE, default=prefill_energy_type)] = (
+            selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        selector.SelectOptionDict(
+                            value=ENERGY_METER_TYPE_TOTAL_INCREASING,
+                            label="Total Increasing (Cumulative kWh)",
+                        ),
+                        selector.SelectOptionDict(
+                            value=ENERGY_METER_TYPE_SESSION,
+                            label="Session Energy (Resets per charge)",
+                        ),
+                    ],
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
             )
         )
 
@@ -479,19 +466,19 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
         )
 
         # Default Charging Location Name
-        fields[
-            vol.Optional(CONF_CHARGING_LOCATION, default=prefill_charging_loc)
-        ] = selector.TextSelector()
+        fields[vol.Optional(CONF_CHARGING_LOCATION, default=prefill_charging_loc)] = (
+            selector.TextSelector()
+        )
 
         # Anti-bounce debounce seconds
-        fields[
-            vol.Optional(CONF_DEBOUNCE_SECONDS, default=prefill_debounce)
-        ] = selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=MIN_DEBOUNCE_SECONDS,
-                max=MAX_DEBOUNCE_SECONDS,
-                step=5,
-                mode=selector.NumberSelectorMode.SLIDER,
+        fields[vol.Optional(CONF_DEBOUNCE_SECONDS, default=prefill_debounce)] = (
+            selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=MIN_DEBOUNCE_SECONDS,
+                    max=MAX_DEBOUNCE_SECONDS,
+                    step=5,
+                    mode=selector.NumberSelectorMode.SLIDER,
+                )
             )
         )
 

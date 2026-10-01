@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 import logging
+from collections.abc import Callable
 from typing import Any
 
 from homeassistant.core import CALLBACK_TYPE, Event, EventStateChangedData, HomeAssistant
@@ -81,9 +81,7 @@ class AutoLedgerSessionTracker:
             CONF_ENERGY_METER_TYPE, ENERGY_METER_TYPE_TOTAL_INCREASING
         )
         self.location_entity: str | None = config.get(CONF_LOCATION_ENTITY)
-        self.default_location: str = config.get(
-            CONF_CHARGING_LOCATION, DEFAULT_CHARGING_LOCATION
-        )
+        self.default_location: str = config.get(CONF_CHARGING_LOCATION, DEFAULT_CHARGING_LOCATION)
         self.debounce_seconds: int = int(
             config.get(CONF_DEBOUNCE_SECONDS, DEFAULT_DEBOUNCE_SECONDS)
         )
@@ -156,9 +154,7 @@ class AutoLedgerSessionTracker:
     async def async_setup(self) -> None:
         """Start tracking state changes."""
         if not self.charging_status_entity:
-            _LOGGER.debug(
-                "No charging status entity configured for vehicle %s", self.vehicle_id
-            )
+            _LOGGER.debug("No charging status entity configured for vehicle %s", self.vehicle_id)
             return
 
         unsub = async_track_state_change_event(
@@ -184,9 +180,7 @@ class AutoLedgerSessionTracker:
         self._unsub_trackers.clear()
         self._listeners.clear()
 
-    async def _async_on_charging_status_changed(
-        self, event: Event[EventStateChangedData]
-    ) -> None:
+    async def _async_on_charging_status_changed(self, event: Event[EventStateChangedData]) -> None:
         """Handle state change of the charging status entity."""
         new_state = event.data.get("new_state")
         old_state = event.data.get("old_state")

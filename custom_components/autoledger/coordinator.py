@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
 import logging
+from datetime import timedelta
 from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import AutoLedgerApiClient, AutoLedgerError
-from .const import CONF_VEHICLES, DEFAULT_SCAN_INTERVAL_MINUTES, DOMAIN
+from .const import DEFAULT_SCAN_INTERVAL_MINUTES, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -60,9 +60,7 @@ class AutoLedgerDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     metrics = await self.client.async_get_vehicle_metrics(vehicle_id)
                     metrics_by_id[vehicle_id] = metrics
                 except AutoLedgerError as err:
-                    _LOGGER.warning(
-                        "Failed to update metrics for vehicle %s: %s", vehicle_id, err
-                    )
+                    _LOGGER.warning("Failed to update metrics for vehicle %s: %s", vehicle_id, err)
                     metrics_by_id[vehicle_id] = {}
 
             return {

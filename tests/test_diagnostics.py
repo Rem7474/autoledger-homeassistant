@@ -28,11 +28,7 @@ async def test_diagnostics_redacts_api_key(mock_hass):
             CONF_HOST: "https://my.autoledger.net",
             CONF_API_KEY: "super_secret_jwt_token",
         },
-        options={
-            CONF_VEHICLES: {
-                vehicle_id: {CONF_VEHICLE_NAME: "Model 3"}
-            }
-        },
+        options={CONF_VEHICLES: {vehicle_id: {CONF_VEHICLE_NAME: "Model 3"}}},
     )
 
     coordinator = MagicMock()
