@@ -51,20 +51,28 @@ def mock_session():
     return session
 
 
+def called_urls(mock_session) -> list[str]:
+    """URLs requested through the mocked session, in order."""
+    return [call.kwargs["url"] for call in mock_session.request.call_args_list]
+
+
 @pytest.mark.asyncio
-async def test_connection_success_health(mock_session):
-    """Test successful connection via /api/health."""
-    mock_session.request.return_value = MockClientResponse(status=200, json_data={"status": "ok"})
+async def test_connection_checks_the_token_on_an_integration_route(mock_session):
+    """The connection test is an authenticated call, not the public health check."""
+    mock_session.request.return_value = MockClientResponse(status=200, json_data=[])
     client = AutoLedgerApiClient("http://autoledger.local:8080", "test_key", mock_session)
 
     result = await client.async_test_connection()
     assert result is True
     assert client.host == "http://autoledger.local:8080"
+    assert called_urls(mock_session) == [
+        "http://autoledger.local:8080/api/integrations/homeassistant/vehicles"
+    ]
 
 
 @pytest.mark.asyncio
 async def test_connection_fallback_to_vehicles(mock_session):
-    """Test connection falling back to /api/vehicles if /api/health is 404."""
+    """An older server without the integration routes is tested on /api/vehicles."""
     resp_404 = MockClientResponse(status=404, text_data="Not Found")
     resp_200 = MockClientResponse(status=200, json_data=[])
     mock_session.request.side_effect = [resp_404, resp_200]
@@ -72,6 +80,7 @@ async def test_connection_fallback_to_vehicles(mock_session):
     client = AutoLedgerApiClient("http://autoledger.local:8080/", "test_key", mock_session)
     result = await client.async_test_connection()
     assert result is True
+    assert called_urls(mock_session)[-1] == "http://autoledger.local:8080/api/vehicles"
 
 
 @pytest.mark.asyncio
@@ -120,6 +129,33 @@ async def test_get_vehicles(mock_session):
     assert len(vehicles) == 2
     assert vehicles[0]["id"] == "v-123"
     assert vehicles[1]["model"] == "MG4"
+    assert called_urls(mock_session) == [
+        "http://autoledger.local:8080/api/integrations/homeassistant/vehicles"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_vehicles_wrong_token_does_not_fall_back(mock_session):
+    """A refused token is reported, not retried on the general API."""
+    mock_session.request.return_value = MockClientResponse(status=401, text_data="Unauthorized")
+    client = AutoLedgerApiClient("http://autoledger.local:8080", "bad_key", mock_session)
+
+    with pytest.raises(AutoLedgerAuthError):
+        await client.async_get_vehicles()
+    assert len(called_urls(mock_session)) == 1
+
+
+@pytest.mark.asyncio
+async def test_get_vehicles_older_server(mock_session):
+    """A server without the integration routes is read through /api/vehicles."""
+    mock_session.request.side_effect = [
+        MockClientResponse(status=404, text_data="Not Found"),
+        MockClientResponse(status=200, json_data=[{"id": "v-1"}]),
+    ]
+    client = AutoLedgerApiClient("http://autoledger.local:8080", "test_key", mock_session)
+
+    assert await client.async_get_vehicles() == [{"id": "v-1"}]
+    assert called_urls(mock_session)[-1] == "http://autoledger.local:8080/api/vehicles"
 
 
 @pytest.mark.asyncio
@@ -139,6 +175,29 @@ async def test_get_vehicle_metrics(mock_session):
     assert metrics["last_charge_cost"] == 8.75
     assert metrics["cost_per_100km"] == 3.42
     assert metrics["currency"] == "EUR"
+    assert called_urls(mock_session) == [
+        "http://autoledger.local:8080/api/integrations/homeassistant/vehicles/v-123/metrics"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_vehicle_metrics_older_server(mock_session):
+    """Without any metrics route, the vehicle itself is read, integration route first."""
+    not_found = MockClientResponse(status=404, text_data="Not Found")
+    mock_session.request.side_effect = [
+        not_found,
+        not_found,
+        MockClientResponse(status=200, json_data={"id": "v-123", "currency": "EUR"}),
+    ]
+    client = AutoLedgerApiClient("http://autoledger.local:8080", "test_key", mock_session)
+
+    metrics = await client.async_get_vehicle_metrics("v-123")
+    assert metrics["currency"] == "EUR"
+    assert called_urls(mock_session) == [
+        "http://autoledger.local:8080/api/integrations/homeassistant/vehicles/v-123/metrics",
+        "http://autoledger.local:8080/api/vehicles/v-123/metrics",
+        "http://autoledger.local:8080/api/integrations/homeassistant/vehicles/v-123",
+    ]
 
 
 @pytest.mark.asyncio

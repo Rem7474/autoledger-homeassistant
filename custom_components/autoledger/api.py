@@ -9,7 +9,7 @@ import aiohttp
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 
-from .const import EVENT_TYPE_ODOMETER_UPDATE
+from .const import EVENT_TYPE_ODOMETER_UPDATE, INTEGRATION_API
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -153,21 +153,28 @@ class AutoLedgerApiClient:
             _LOGGER.exception("Unexpected error while communicating with AutoLedger: %s", err)
             raise AutoLedgerApiError(f"Unexpected error: {err}") from err
 
+    async def _get_first_available(self, *endpoints: str) -> Any:
+        """GET the first endpoint the server knows, moving to the next one only on HTTP 404.
+
+        Recent servers serve the integration routes (/api/integrations/homeassistant/...), which are the
+        only ones an API token opens; older servers only have the general /api routes.
+        """
+        for endpoint in endpoints[:-1]:
+            try:
+                return await self._request("GET", endpoint)
+            except AutoLedgerApiError as err:
+                if err.status_code != 404:
+                    raise
+        return await self._request("GET", endpoints[-1])
+
     async def async_test_connection(self) -> bool:
-        """Test API connectivity and credentials."""
-        try:
-            await self._request("GET", "/api/health")
-            return True
-        except AutoLedgerApiError as err:
-            if err.status_code == 404:
-                # If /api/health does not exist, try /api/vehicles
-                await self._request("GET", "/api/vehicles")
-                return True
-            raise
+        """Test API connectivity and credentials with an authenticated call."""
+        await self._get_first_available(f"{INTEGRATION_API}/vehicles", "/api/vehicles")
+        return True
 
     async def async_get_vehicles(self) -> list[dict[str, Any]]:
         """Fetch list of all vehicles from AutoLedger."""
-        res = await self._request("GET", "/api/vehicles")
+        res = await self._get_first_available(f"{INTEGRATION_API}/vehicles", "/api/vehicles")
         if isinstance(res, list):
             return res
         if isinstance(res, dict) and "vehicles" in res and isinstance(res["vehicles"], list):
@@ -177,7 +184,10 @@ class AutoLedgerApiClient:
     async def async_get_vehicle_metrics(self, vehicle_id: str) -> dict[str, Any]:
         """Fetch latest metrics and financial summary for a vehicle."""
         try:
-            res = await self._request("GET", f"/api/vehicles/{vehicle_id}/metrics")
+            res = await self._get_first_available(
+                f"{INTEGRATION_API}/vehicles/{vehicle_id}/metrics",
+                f"/api/vehicles/{vehicle_id}/metrics",
+            )
             if isinstance(res, dict):
                 return res
         except AutoLedgerApiError as err:
@@ -185,7 +195,9 @@ class AutoLedgerApiClient:
                 raise
 
         # Fallback to vehicle endpoint
-        res = await self._request("GET", f"/api/vehicles/{vehicle_id}")
+        res = await self._get_first_available(
+            f"{INTEGRATION_API}/vehicles/{vehicle_id}", f"/api/vehicles/{vehicle_id}"
+        )
         if isinstance(res, dict):
             # Extract nested metrics if present or return vehicle data
             return res.get("metrics", res)
@@ -196,7 +208,7 @@ class AutoLedgerApiClient:
         try:
             res = await self._request(
                 "POST",
-                "/api/integrations/homeassistant/event",
+                f"{INTEGRATION_API}/event",
                 json=event_data,
             )
             return res if isinstance(res, dict) else {"status": "success"}
@@ -278,7 +290,7 @@ class AutoLedgerApiClient:
         try:
             res = await self._request(
                 "POST",
-                "/api/integrations/homeassistant/event",
+                f"{INTEGRATION_API}/event",
                 json=payload,
             )
             return res if isinstance(res, dict) else {"status": "success"}
