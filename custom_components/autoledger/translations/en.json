@@ -23,15 +23,22 @@
   "options": {
     "step": {
       "init": {
+        "title": "AutoLedger Settings",
+        "menu_options": {
+          "manage_vehicles": "🚗 Manage Vehicles",
+          "manage_chargers": "🔌 Manage Charging Stations"
+        }
+      },
+      "manage_vehicles": {
         "title": "Manage AutoLedger Vehicles",
         "menu_options": {
-          "add_vehicle": "Add a vehicle mapping",
-          "edit_vehicle": "Edit existing vehicle mapping",
-          "remove_vehicle": "Remove vehicle mapping"
+          "add_vehicle": "Add a vehicle",
+          "edit_vehicle": "Edit existing vehicle",
+          "remove_vehicle": "Remove vehicle"
         }
       },
       "add_vehicle": {
-        "title": "Add Vehicle Mapping",
+        "title": "Add Vehicle",
         "description": "Select an AutoLedger vehicle and an associated Home Assistant device to assist in mapping.",
         "data": {
           "vehicle_id": "AutoLedger Vehicle",
@@ -39,32 +46,102 @@
         }
       },
       "edit_vehicle": {
-        "title": "Edit Vehicle Mapping",
-        "description": "Select a vehicle to edit its telemetry and energy configuration.",
+        "title": "Edit Vehicle",
+        "description": "Select a vehicle to edit its telemetry configuration.",
         "data": {
           "vehicle_id": "Vehicle"
         }
       },
       "remove_vehicle": {
-        "title": "Remove Vehicle Mapping",
+        "title": "Remove Vehicle",
         "description": "Select the vehicle mapping you wish to remove.",
         "data": {
           "vehicle_id": "Vehicle to remove"
         }
       },
       "vehicle_mapping": {
-        "title": "Configure Vehicle Entities",
-        "description": "Map Home Assistant telemetry and charger entities to this AutoLedger vehicle.",
+        "title": "Configure Vehicle Telemetry",
+        "description": "Map Home Assistant telemetry entities to this AutoLedger vehicle.",
         "data": {
-          "charging_status_entity": "Charging Status Sensor",
           "battery_soc_entity": "Battery State of Charge (%)",
           "odometer_entity": "Vehicle Odometer (km)",
-          "energy_meter_entity": "Charging Energy Sensor (kWh)",
-          "energy_meter_type": "Energy Sensor Counter Mode",
-          "location_entity": "Vehicle Tracker / Location Entity",
-          "charging_location": "Default Location Tag",
-          "debounce_seconds": "Solar Anti-Bounce Debounce (seconds)"
+          "charging_status_entity": "Vehicle Internal Charging Status Sensor (Optional)"
         }
+      },
+      "manage_chargers": {
+        "title": "Manage Charging Stations",
+        "menu_options": {
+          "add_charger": "Add a charging station",
+          "edit_charger": "Edit existing charging station",
+          "remove_charger": "Remove charging station"
+        }
+      },
+      "add_charger": {
+        "title": "Add Charging Station",
+        "description": "Configure a residential charging station or energy meter."
+      },
+      "edit_charger": {
+        "title": "Edit Charging Station",
+        "description": "Select a charging station to edit its configuration.",
+        "data": {
+          "charger_id": "Charging Station"
+        }
+      },
+      "remove_charger": {
+        "title": "Remove Charging Station",
+        "description": "Select the charging station you wish to remove.",
+        "data": {
+          "charger_id": "Charging Station to remove"
+        }
+      },
+      "charger_step1": {
+        "title": "Configure Charging Station",
+        "description": "Configure the charging station name, activation/status sensor, energy meter, debounce timer, and location tag.",
+        "data": {
+          "charger_name": "Charging Station Name",
+          "charging_status_entity": "Charging Status Sensor / Switch / Power",
+          "energy_meter_entity": "Charging Energy Sensor (kWh)",
+          "energy_meter_type": "Energy Counter Mode",
+          "debounce_seconds": "Solar Anti-Bounce Debounce (seconds)",
+          "charging_location": "Default Location Tag"
+        },
+        "error": {
+          "invalid_name": "Please enter a valid charger name."
+        }
+      },
+      "charger_step2": {
+        "title": "Vehicle Assignment Mode",
+        "description": "Choose how charges from this station are assigned to AutoLedger vehicles.",
+        "data": {
+          "assignment_mode": "Assignment Strategy",
+          "linked_vehicle_id": "Fixed Linked Vehicle",
+          "vehicle_select_entity": "Dynamic Vehicle Selector Entity"
+        },
+        "error": {
+          "select_vehicle": "Please select a vehicle for fixed assignment.",
+          "select_entity": "Please select an entity for dynamic selection."
+        }
+      }
+    },
+    "error": {
+      "invalid_name": "Please enter a valid charger name.",
+      "select_vehicle": "Please select a vehicle for fixed assignment.",
+      "select_entity": "Please select an entity for dynamic selection."
+    }
+  },
+  "selector": {
+    "assignment_mode": {
+      "options": {
+        "fixed": "Fixed Vehicle (Linked)",
+        "input_select": "Dynamic Selector (input_select)",
+        "correlation": "Automatic Correlation",
+        "unassigned": "Unassigned / Multi-vehicle"
+      }
+    },
+    "energy_meter_type": {
+      "options": {
+        "total_increasing": "Total Increasing (Cumulative kWh)",
+        "session": "Session Energy (Resets per charge)"
       }
     }
   },

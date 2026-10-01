@@ -13,15 +13,19 @@ Connect your Home Assistant instance to AutoLedger to automatically detect EV ch
 
 ## ⚡ Key Features
 
+- **Decoupled Architecture**: Configure Vehicles and Charging Stations / Energy Meters independently. One residential charger can charge multiple cars!
 - **Multi-Vehicle Support**: Associate as many vehicles from your AutoLedger instance as needed.
-- **Assisted HA Device Discovery**: Select your car device (Tesla, MG iSmart, Renault, OBD-II, etc.) and let AutoLedger auto-detect battery SoC, odometer, and charging state entities.
-- **Independent Charger & Sub-meter Support**: Link dedicated wallboxes or energy monitors (Wallbox, Easee, Shelly Pro EM, Zaptec, etc.). Supports both **Total Increasing (cumulative kWh)** and **Session Energy** counter modes.
+- **Assisted HA Device Discovery**: Select your car device (Tesla, MG iSmart, Renault, OBD-II, etc.) to pre-fill telemetry entities.
+- **Dedicated Charging Stations & Sub-meters**: Link wallboxes or energy monitors (Wallbox, Easee, Shelly Pro EM, Zaptec, etc.). Supports both **Total Increasing (cumulative kWh)** and **Session Energy** counter modes.
+- **4 Vehicle Assignment Strategies**:
+  1. **Fixed**: Permanently associate the charging station with a specific vehicle.
+  2. **Dynamic Selector (input_select)**: Pick the currently connected car dynamically using a Home Assistant `input_select` or sensor entity.
+  3. **Automatic Correlation**: Auto-match the active vehicle by detecting which car is currently reporting an internal charging state.
+  4. **Unassigned / Multi-vehicle**: Send charge sessions with `vehicle_id: null` so they appear under *"Charges to Qualify"* in the AutoLedger web UI.
 - **Dynamic Solar Anti-Bounce Debounce Engine**: EV charging on solar power frequently pauses due to passing clouds or household load shedding. The built-in configurable debounce timer (15s - 300s, default 60s) prevents fragmented micro-sessions by consolidating them into a single cohesive charging session.
-- **Financial & Efficiency Sensors**:
-  - `sensor.<vehicle>_last_charge_cost`: Monetary cost of the last charging session.
-  - `sensor.<vehicle>_cost_per_100km`: Smoothed average financial efficiency (€/100km or currency/100km).
-  - `sensor.<vehicle>_sync_status`: Synchronization status (`ok`, `pending`, `error`).
-  - `sensor.<vehicle>_charging_state`: Real-time state (`idle`, `charging`, `cooling_down`).
+- **Dedicated Vehicle & Charger Sensors**:
+  - Vehicle: `sensor.<vehicle>_last_charge_cost`, `sensor.<vehicle>_cost_per_100km`
+  - Charger: `sensor.<charger>_charging_state`, `sensor.<charger>_last_energy_kwh`, `sensor.<charger>_sync_status`
 - **Native HA Services**:
   - `autoledger.sync`: Force an immediate synchronization with the AutoLedger server.
   - `autoledger.submit_charge`: Manually log or automate charging session submissions from HA scripts.
@@ -34,18 +38,20 @@ Connect your Home Assistant instance to AutoLedger to automatically detect EV ch
 flowchart TD
     subgraph HomeAssistant["Home Assistant Instance"]
         subgraph LocalEntities["Local HA Telemetry & Meters"]
-            CarBattery["Battery SoC (%)"]
-            CarOdo["Odometer (km)"]
-            CarPlug["Charging / Cable Status"]
+            CarBattery["Car Battery SoC (%)"]
+            CarOdo["Car Odometer (km)"]
+            CarState["Car Internal Charging State"]
+            InputSelect["Input Select (Active Car)"]
+            WallboxPower["Charger Activation / Power (W/kW)"]
             WallboxEnergy["Energy Meter (kWh)"]
         end
 
         subgraph Integration["Custom Component: autoledger"]
-            ConfigFlow["Config & Options Flow"]
-            StateTracker["Charge Session Tracker (Debounce 60s)"]
+            ConfigFlow["Decoupled Options Flow (Vehicles & Chargers)"]
+            ChargerTracker["AutoLedgerChargerTracker (Debounce & Vehicle Resolver)"]
             Coordinator["AutoLedgerDataUpdateCoordinator (15m Polling)"]
             APIClient["AutoLedgerApiClient (aiohttp)"]
-            Sensors["Exposed Sensors (Cost, Efficiency, Status)"]
+            Sensors["Exposed Sensors (Vehicles & Chargers)"]
         end
     end
 
@@ -55,12 +61,14 @@ flowchart TD
         APIVehicles["GET /api/vehicles/{id}"]
     end
 
-    LocalEntities -->|State Change Event| StateTracker
-    StateTracker -->|Charging Session Complete| APIClient
+    WallboxPower & WallboxEnergy -->|Charger Activation & kWh| ChargerTracker
+    CarBattery & CarOdo & CarState & InputSelect -.->|Assignment Strategy| ChargerTracker
+    ChargerTracker -->|Charging Session Complete| APIClient
     Coordinator -->|Data Refresh| APIClient
     APIClient -->|Bearer Token HTTP| Backend
     Backend -->|Financial Metrics JSON| Coordinator
-    Coordinator -->|Update State| Sensors
+    Coordinator -->|Vehicle Metrics| Sensors
+    ChargerTracker -->|Live State & Last kWh| Sensors
 ```
 
 ---
@@ -95,26 +103,34 @@ flowchart TD
 3. Fill in your server details:
    - **Server URL**: The base URL of your AutoLedger instance (e.g., `http://192.168.1.100:8080` or `https://autoledger.yourdomain.com`).
    - **API Token**: Your AutoLedger Personal Access Token or Bearer Token.
-   - **Verify SSL Certificate**: Enable or disable according to your local setup (useful if using self-signed internal certificates).
+   - **Verify SSL Certificate**: Enable or disable according to your local setup.
 4. Click **Submit**. The integration validates the connection immediately.
 
-### 2. Vehicle Mapping (`OptionsFlow`)
+### 2. Manage Vehicles (`OptionsFlow` > 🚗 Manage Vehicles)
 
-Once the integration is created, click **Configure** on the AutoLedger integration card:
+1. Click **Configure** on the AutoLedger integration card, then select **Manage Vehicles**.
+2. Click **Add a vehicle**.
+3. Select an AutoLedger vehicle synchronized from your server and optionally an associated Home Assistant Device to pre-fill entity fields.
+4. Map vehicle telemetry entities:
+   - **Battery State of Charge (%)**: Vehicle battery percentage sensor (optional).
+   - **Vehicle Odometer (km)**: Vehicle distance sensor (optional).
+   - **Vehicle Internal Charging Status Sensor**: Internal charging sensor (optional, used for correlation mode).
 
-1. Select **Add a vehicle mapping** from the menu.
-2. Choose your vehicle from the list synchronized from your AutoLedger server.
-3. *(Optional)* Select an associated **Home Assistant Device** (e.g. your vehicle's device from the Tesla or MG integration) to automatically pre-fill entity fields.
-4. Verify or adjust the entities:
-   - **Charging Status Sensor** *(Required)*: Binary sensor or sensor indicating when the car is charging (e.g. `binary_sensor.my_car_charging`).
-   - **Battery State of Charge (%)**: Battery level sensor (e.g. `sensor.my_car_battery_level`).
-   - **Vehicle Odometer (km)**: Odometer distance sensor (e.g. `sensor.my_car_odometer`).
-   - **Charging Energy Sensor (kWh)**: Energy sensor from your wallbox or sub-meter (e.g. `sensor.shelly_em_charging_energy`).
-   - **Energy Sensor Counter Mode**:
-     - `Total Increasing (Cumulative kWh)`: For counters that accumulate total energy over time.
-     - `Session Energy (Resets per charge)`: For meters that reset to 0 at the start of each charge.
+### 3. Manage Charging Stations (`OptionsFlow` > 🔌 Manage Charging Stations)
+
+1. Click **Configure** > **Manage Charging Stations** > **Add a charging station**.
+2. **Step 1: Station Hardware & Settings**:
+   - **Charging Station Name**: Friendly name (e.g. `Wallbox Garage`, `Smart Plug Patio`).
+   - **Charging Status Sensor**: Binary sensor, switch, or power sensor (W or kW with > 500W threshold) that activates when charging begins.
+   - **Charging Energy Sensor (kWh)**: Energy sensor from your wallbox or sub-meter.
+   - **Energy Counter Mode**: `Total Increasing` (cumulative kWh) or `Session Energy` (resets per charge).
+   - **Solar Anti-Bounce Debounce (seconds)**: Delay timer before finalizing a session (15s - 300s, default: 60s).
    - **Default Location Tag**: Default location string sent to AutoLedger (default: `home`).
-   - **Solar Anti-Bounce Debounce (seconds)**: Delay timer to wait before finalizing a session (adjustable between 15s and 300s, default: 60s).
+3. **Step 2: Vehicle Assignment Strategy**:
+   - **Fixed**: Select a linked vehicle from your configured vehicles.
+   - **Dynamic Selector (input_select)**: Select an `input_select` or sensor entity indicating the vehicle currently connected.
+   - **Automatic Correlation**: Automatically assigns the session to whichever vehicle is charging simultaneously.
+   - **Unassigned / Multi-vehicle**: Sends `vehicle_id: null` to qualify the charge later in AutoLedger.
 
 ---
 
@@ -124,23 +140,27 @@ Charging electric vehicles with solar surplus (PV diversion) often involves temp
 
 Standard energy loggers often register multiple tiny sessions of a few minutes, cluttering logs and distorting statistics. AutoLedger solves this:
 
-1. **Charge Started**: The car enters charging state. Initial odometer, initial SoC, and initial energy counter reading are recorded.
-2. **Temporary Pause / Cloud**: When charging drops to `idle` / `off`, the debounce timer arms (e.g., 60 seconds) without closing the session. The status changes to `cooling_down`.
+1. **Charge Started**: The charger enters charging state. Initial odometer, initial SoC, and initial energy counter reading are recorded.
+2. **Temporary Pause / Cloud**: When charging drops to `idle` / `off` (or power falls below 500W), the debounce timer arms (e.g., 60 seconds) without closing the session. The status changes to `cooling_down`.
 3. **Resumption**: If charging resumes before the timer expires, the timer is aborted and the session continues seamlessly.
-4. **Completion**: If the timer expires or the cable is disconnected, the total energy added (`energy_final - energy_start`) and final SoC are computed and transmitted to AutoLedger in a single event.
+4. **Completion**: If the timer expires, the total energy added (`energy_final - energy_start`), final SoC, and vehicle assignment are resolved and transmitted to AutoLedger in a single event.
 
 ---
 
 ## 📊 Exposed Sensors
 
-Each configured vehicle creates a dedicated Device in Home Assistant with the following entities:
-
+### Vehicle Entities
 | Sensor Entity ID | Device Class | Unit | Description |
 |---|---|---|---|
 | `sensor.<vehicle>_last_charge_cost` | `monetary` | `€` / `$` | Total financial cost of the last charging session. |
 | `sensor.<vehicle>_cost_per_100km` | - | `€/100km` | Smoothed average operating energy cost per 100 km calculated by AutoLedger. |
-| `sensor.<vehicle>_sync_status` | - | - | Synchronization status: `ok`, `pending`, or `error`. |
-| `sensor.<vehicle>_charging_state` | - | - | Real-time state: `idle`, `charging`, or `cooling_down` (debouncing). |
+
+### Charging Station Entities
+| Sensor Entity ID | Device Class | Unit | Description |
+|---|---|---|---|
+| `sensor.<charger>_charging_state` | - | - | Real-time state: `idle`, `charging`, or `cooling_down` (debouncing). |
+| `sensor.<charger>_last_energy_kwh` | `energy` | `kWh` | Energy delivered during the last completed charging session. |
+| `sensor.<charger>_sync_status` | - | - | Synchronization status: `ok`, `pending`, or `error`. |
 
 ---
 

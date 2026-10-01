@@ -159,3 +159,90 @@ async def test_sensor_tracker_live_updates(mock_hass):
     # Cleanup
     await sync_sensor.async_will_remove_from_hass()
     await state_sensor.async_will_remove_from_hass()
+
+
+@pytest.mark.asyncio
+async def test_decoupled_sensors_setup_entry(mock_hass):
+    """Test decoupled setup with vehicle metrics sensors and charger sensors."""
+    from custom_components.autoledger.const import CONF_CHARGER_NAME, CONF_CHARGERS
+    from custom_components.autoledger.sensor import (
+        AutoLedgerChargerChargingStateSensor,
+        AutoLedgerChargerLastEnergySensor,
+        AutoLedgerChargerSyncStatusSensor,
+    )
+    from custom_components.autoledger.session_tracker import AutoLedgerChargerTracker
+
+    vehicle_id = "v-tesla"
+    charger_id = "wb-garage"
+
+    entry = ConfigEntry(
+        entry_id="entry_decoupled_test",
+        data={CONF_HOST: "http://autoledger.local"},
+        options={
+            CONF_VEHICLES: {
+                vehicle_id: {CONF_VEHICLE_NAME: "Model Y"},
+            },
+            CONF_CHARGERS: {
+                charger_id: {CONF_CHARGER_NAME: "Wallbox Garage"},
+            },
+        },
+    )
+
+    coordinator = MagicMock()
+    coordinator.data = {
+        "vehicles": {vehicle_id: {"make": "Tesla", "model": "Model Y"}},
+        "metrics": {
+            vehicle_id: {
+                "last_charge_cost": 8.40,
+                "cost_per_100km": 3.10,
+                "currency": "EUR",
+                "energy_kwh": 30.0,
+                "duration_minutes": 180,
+                "date": "2026-10-01T08:00:00Z",
+            }
+        },
+    }
+
+    client = MagicMock()
+    tracker = AutoLedgerChargerTracker(
+        mock_hass, client, charger_id=charger_id, config={CONF_CHARGER_NAME: "Wallbox Garage"}
+    )
+    tracker.state = STATE_IDLE
+    tracker.sync_status = SYNC_STATUS_OK
+    tracker.last_energy_kwh = 28.45
+
+    entry.runtime_data = {
+        "coordinator": coordinator,
+        "trackers": {charger_id: tracker},
+    }
+    mock_hass.data[DOMAIN] = {entry.entry_id: entry.runtime_data}
+
+    created_entities = []
+
+    def add_entities(entities):
+        created_entities.extend(entities)
+
+    await async_setup_entry(mock_hass, entry, add_entities)
+
+    # 2 vehicle sensors + 3 charger sensors = 5 sensors total
+    assert len(created_entities) == 5
+
+    cost_sensor = next(e for e in created_entities if isinstance(e, AutoLedgerLastChargeCostSensor))
+    efficiency_sensor = next(
+        e for e in created_entities if isinstance(e, AutoLedgerCostPer100KmSensor)
+    )
+    charger_state_sensor = next(
+        e for e in created_entities if isinstance(e, AutoLedgerChargerChargingStateSensor)
+    )
+    charger_energy_sensor = next(
+        e for e in created_entities if isinstance(e, AutoLedgerChargerLastEnergySensor)
+    )
+    charger_sync_sensor = next(
+        e for e in created_entities if isinstance(e, AutoLedgerChargerSyncStatusSensor)
+    )
+
+    assert cost_sensor.native_value == 8.40
+    assert efficiency_sensor.native_value == 3.10
+    assert charger_state_sensor.native_value == STATE_IDLE
+    assert charger_energy_sensor.native_value == 28.45
+    assert charger_sync_sensor.native_value == SYNC_STATUS_OK

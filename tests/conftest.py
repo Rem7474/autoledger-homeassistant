@@ -117,7 +117,13 @@ if "homeassistant" not in sys.modules:
         def utcnow():
             return datetime.now(UTC)
 
+        def slugify(text):
+            import re
+
+            return re.sub(r"[^a-zA-Z0-9_]+", "_", text).strip("_").lower()
+
         ha.util.dt.utcnow = utcnow
+        ha.util.slugify = slugify
 
         def async_call_later(hass, delay, action):
             return MagicMock()

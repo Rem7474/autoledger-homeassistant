@@ -9,6 +9,7 @@ import pytest
 
 from custom_components.autoledger.api import (
     AutoLedgerApiClient,
+    AutoLedgerApiError,
     AutoLedgerAuthError,
     AutoLedgerConnectionError,
     AutoLedgerTimeoutError,
@@ -210,3 +211,51 @@ async def test_submit_charge(mock_session):
         soc_end=75,
     )
     assert res == {"status": "success"}
+
+
+@pytest.mark.asyncio
+async def test_post_event_none_vehicle_id_success(mock_session):
+    """Test posting charging event with vehicle_id=None (unassigned session)."""
+    mock_session.request.return_value = MockClientResponse(status=200, json_data={"status": "ok"})
+    client = AutoLedgerApiClient("http://autoledger.local:8080", "test_key", mock_session)
+
+    payload = {
+        "vehicle_id": None,
+        "event_type": "charging_session_end",
+        "source": "homeassistant",
+        "data": {
+            "charger_name": "Wallbox Garage",
+            "energy_added_kwh": 18.2,
+        },
+    }
+
+    res = await client.async_post_event(payload)
+    assert res == {"status": "ok"}
+    assert (
+        mock_session.request.call_args[1]["url"]
+        == "http://autoledger.local:8080/api/integrations/homeassistant/event"
+    )
+
+
+@pytest.mark.asyncio
+async def test_post_event_none_vehicle_id_no_fallback_on_404(mock_session):
+    """Test that when vehicle_id is None and event endpoint is 404, no fallback is attempted."""
+    mock_session.request.return_value = MockClientResponse(status=404, text_data="Not Found")
+    client = AutoLedgerApiClient("http://autoledger.local:8080", "test_key", mock_session)
+
+    payload = {
+        "vehicle_id": None,
+        "event_type": "charging_session_end",
+        "source": "homeassistant",
+        "data": {
+            "charger_name": "Wallbox Garage",
+            "energy_added_kwh": 18.2,
+        },
+    }
+
+    with pytest.raises(AutoLedgerApiError) as exc_info:
+        await client.async_post_event(payload)
+
+    assert exc_info.value.status_code == 404
+    # Ensure only 1 call was made (no fallback call to /api/vehicles/{id}/charges)
+    assert mock_session.request.call_count == 1
