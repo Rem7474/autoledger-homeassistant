@@ -9,6 +9,15 @@
           "api_key": "Jeton API (Token)",
           "verify_ssl": "Vérifier le certificat SSL"
         }
+      },
+      "reconfigure": {
+        "title": "Reconfigurer AutoLedger",
+        "description": "Mettez à jour les informations de connexion à votre serveur AutoLedger.",
+        "data": {
+          "host": "URL du serveur",
+          "api_key": "Jeton API (Token)",
+          "verify_ssl": "Vérifier le certificat SSL"
+        }
       }
     },
     "error": {
@@ -17,14 +26,20 @@
       "unknown": "Une erreur inattendue est survenue."
     },
     "abort": {
-      "already_configured": "Cette instance AutoLedger est déjà configurée."
+      "already_configured": "Cette instance AutoLedger est déjà configurée.",
+      "reconfigure_successful": "Connexion à AutoLedger mise à jour avec succès."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Paramètres AutoLedger",
+        "title": "Configuration AutoLedger",
         "menu_options": {
+          "edit_vehicle": "🚗 Modifier un véhicule",
+          "add_vehicle": "➕ Ajouter un véhicule",
+          "edit_charger": "⚡ Modifier une borne",
+          "add_charger": "➕ Ajouter une borne de recharge",
+          "remove_item": "🗑️ Supprimer un élément",
           "manage_vehicles": "🚗 Gérer les Véhicules",
           "manage_chargers": "🔌 Gérer les Bornes de Recharge"
         }
@@ -61,12 +76,16 @@
       },
       "vehicle_mapping": {
         "title": "Configuration des Capteurs Véhicule",
-        "description": "Associez les capteurs de télématique Home Assistant à ce véhicule AutoLedger.",
+        "description": "Associez les capteurs de télématique Home Assistant à ce véhicule AutoLedger.\n\n{preview_section}",
         "data": {
           "battery_soc_entity": "Niveau de batterie SoC (%)",
           "odometer_entity": "Odomètre du véhicule (km)",
           "charging_status_entity": "Capteur d'état de charge interne du véhicule (Optionnel)"
         }
+      },
+      "vehicle_preview": {
+        "title": "Vérification des Capteurs Véhicule",
+        "description": "Vérifiez les données lues depuis Home Assistant pour {vehicle_name} :\n\n• 🔋 Niveau de batterie : {battery_preview}\n• 🛣️ Odomètre : {odometer_preview}\n• 🔌 État de charge : {charging_preview}\n\nCliquez sur Valider pour enregistrer cette configuration."
       },
       "manage_chargers": {
         "title": "Gestion des Bornes de Recharge",
@@ -94,58 +113,76 @@
           "charger_id": "Borne à retirer"
         }
       },
+      "remove_item": {
+        "title": "Supprimer un Élément",
+        "description": "Sélectionnez le véhicule ou la borne de recharge que vous souhaitez retirer.",
+        "data": {
+          "item_to_remove": "Élément à supprimer"
+        }
+      },
       "charger_step1": {
         "title": "Configuration de la Borne",
-        "description": "Configurez le nom, le capteur d'activation, le compteur d'énergie, l'anti-rebond et le tag de lieu de la borne.",
+        "description": "Configurez le nom, le capteur d'activation, le compteur d'énergie, l'anti-rebond et le tag de lieu de la borne.\n\n{preview_section}",
         "data": {
-          "charger_name": "Nom de la borne",
-          "charging_status_entity": "Capteur d'activation / Puissance / Switch",
-          "energy_meter_entity": "Compteur d'énergie (kWh)",
-          "energy_meter_type": "Mode du compteur d'énergie",
-          "debounce_seconds": "Temporisation anti-rebond solaire (secondes)",
-          "charging_location": "Lieu de charge (tag)"
+          "charger_name": "Nom de la Borne",
+          "charging_status_entity": "Capteur d'État / Interrupteur / Puissance de Charge",
+          "energy_meter_entity": "Capteur d'Énergie de Charge (kWh)",
+          "energy_meter_type": "Type de Comptage d'Énergie",
+          "debounce_seconds": "Délai anti-rebond solaire (secondes)",
+          "charging_location": "Tag de Lieu par Défaut"
         }
       },
       "charger_step2": {
-        "title": "Mode d'Attribution du Véhicule",
-        "description": "Définissez comment attribuer le véhicule lors de la fin d'une recharge sur cette borne.",
+        "title": "Mode d'Attribution Véhicule",
+        "description": "Définissez comment les sessions de charge de cette borne sont associées aux véhicules AutoLedger.",
         "data": {
-          "assignment_mode": "Stratégie d'attribution",
-          "linked_vehicle_id": "Véhicule lié fixe",
-          "vehicle_select_entity": "Entité de sélection dynamique"
+          "assignment_mode": "Stratégie d'Attribution",
+          "linked_vehicle_id": "Véhicule Fixe Associé",
+          "vehicle_select_entity": "Entité Sélecteur Dynamique de Véhicule"
         }
+      },
+      "charger_preview": {
+        "title": "Vérification de la Borne",
+        "description": "Vérifiez la configuration pour {charger_name} :\n\n• ⚡ Capteur de statut : {status_preview}\n• 📊 Compteur d'énergie : {energy_preview} ({energy_type})\n• ⏱️ Temporisation anti-rebond : {debounce_seconds}s\n• 🚗 Stratégie d'attribution : {assignment_mode}\n\nCliquez sur Valider pour enregistrer cette configuration."
       }
     },
     "error": {
-      "invalid_name": "Veuillez saisir un nom valide pour la borne.",
+      "invalid_name": "Veuillez entrer un nom de borne valide.",
       "select_vehicle": "Veuillez sélectionner un véhicule pour l'attribution fixe.",
-      "select_entity": "Veuillez sélectionner une entité pour la sélection dynamique."
+      "select_entity": "Veuillez sélectionner une entité pour la sélection dynamique.",
+      "invalid_battery_unit": "L'unité du capteur de batterie (SoC) doit être '%'.",
+      "invalid_odometer_unit": "L'unité de l'odomètre doit être une distance ('km' ou 'mi').",
+      "invalid_energy_unit": "Le compteur d'énergie doit avoir une unité d'énergie ('kWh' ou 'Wh'). Ne pas utiliser un capteur de puissance (kW/W).",
+      "invalid_numeric_state": "L'état du capteur doit être une valeur numérique valide.",
+      "invalid_battery_range": "Le niveau de batterie (SoC) doit être compris entre 0% et 100%.",
+      "invalid_odometer_range": "L'odomètre ne peut pas être négatif.",
+      "invalid_energy_range": "La valeur du compteur d'énergie ne peut pas être négative."
     }
   },
   "selector": {
     "assignment_mode": {
       "options": {
-        "fixed": "Véhicule fixe lié",
-        "input_select": "Sélecteur dynamique (input_select)",
-        "correlation": "Détection automatique (corrélation)",
-        "unassigned": "Multi-véhicules / Borne aveugle (non attribué)"
+        "fixed": "Véhicule Fixe (Dédié)",
+        "input_select": "Sélecteur Dynamique (input_select)",
+        "correlation": "Corrélation Automatique",
+        "unassigned": "Non attribué / Multi-véhicules"
       }
     },
     "energy_meter_type": {
       "options": {
-        "total_increasing": "Compteur cumulé (kWh croissants)",
-        "session": "Énergie par session (remise à zéro par charge)"
+        "total_increasing": "Total Croissant (kWh cumulés)",
+        "session": "Énergie par Session (Remise à zéro à chaque charge)"
       }
     }
   },
   "services": {
     "sync": {
       "name": "Synchroniser avec AutoLedger",
-      "description": "Force le rafraîchissement immédiat des métriques et historiques de charge depuis le serveur AutoLedger."
+      "description": "Force l'actualisation immédiate des métriques des véhicules et de l'historique des charges depuis le serveur AutoLedger."
     },
     "submit_charge": {
-      "name": "Envoyer une session de charge",
-      "description": "Envoie manuellement ou via automatisation une session de recharge complète à AutoLedger."
+      "name": "Enregistrer une Session de Charge",
+      "description": "Soumet manuellement ou automatise l'enregistrement d'une session de charge dans AutoLedger."
     }
   }
 }

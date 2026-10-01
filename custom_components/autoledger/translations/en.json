@@ -9,6 +9,15 @@
           "api_key": "API Token",
           "verify_ssl": "Verify SSL Certificate"
         }
+      },
+      "reconfigure": {
+        "title": "Reconfigure AutoLedger",
+        "description": "Update your AutoLedger server details and personal access token.",
+        "data": {
+          "host": "Server URL",
+          "api_key": "API Token",
+          "verify_ssl": "Verify SSL Certificate"
+        }
       }
     },
     "error": {
@@ -17,7 +26,8 @@
       "unknown": "Unexpected error occurred."
     },
     "abort": {
-      "already_configured": "This AutoLedger server is already configured."
+      "already_configured": "This AutoLedger server is already configured.",
+      "reconfigure_successful": "AutoLedger connection successfully updated."
     }
   },
   "options": {
@@ -25,6 +35,11 @@
       "init": {
         "title": "AutoLedger Settings",
         "menu_options": {
+          "edit_vehicle": "🚗 Edit Vehicle",
+          "add_vehicle": "➕ Add Vehicle",
+          "edit_charger": "⚡ Edit Charging Station",
+          "add_charger": "➕ Add Charging Station",
+          "remove_item": "🗑️ Remove Vehicle or Charger",
           "manage_vehicles": "🚗 Manage Vehicles",
           "manage_chargers": "🔌 Manage Charging Stations"
         }
@@ -61,12 +76,16 @@
       },
       "vehicle_mapping": {
         "title": "Configure Vehicle Telemetry",
-        "description": "Map Home Assistant telemetry entities to this AutoLedger vehicle.",
+        "description": "Map Home Assistant telemetry entities to this AutoLedger vehicle.\n\n{preview_section}",
         "data": {
           "battery_soc_entity": "Battery State of Charge (%)",
           "odometer_entity": "Vehicle Odometer (km)",
           "charging_status_entity": "Vehicle Internal Charging Status Sensor (Optional)"
         }
+      },
+      "vehicle_preview": {
+        "title": "Vehicle Sensors Verification",
+        "description": "Review the telemetry data detected for {vehicle_name}:\n\n• 🔋 Battery SoC: {battery_preview}\n• 🛣️ Odometer: {odometer_preview}\n• 🔌 Charging Status: {charging_preview}\n\nClick Submit to save."
       },
       "manage_chargers": {
         "title": "Manage Charging Stations",
@@ -94,9 +113,16 @@
           "charger_id": "Charging Station to remove"
         }
       },
+      "remove_item": {
+        "title": "Remove Vehicle or Charging Station",
+        "description": "Select the vehicle or charging station you wish to remove.",
+        "data": {
+          "item_to_remove": "Item to remove"
+        }
+      },
       "charger_step1": {
         "title": "Configure Charging Station",
-        "description": "Configure the charging station name, activation/status sensor, energy meter, debounce timer, and location tag.",
+        "description": "Configure the charging station name, activation/status sensor, energy meter, debounce timer, and location tag.\n\n{preview_section}",
         "data": {
           "charger_name": "Charging Station Name",
           "charging_status_entity": "Charging Status Sensor / Switch / Power",
@@ -114,12 +140,23 @@
           "linked_vehicle_id": "Fixed Linked Vehicle",
           "vehicle_select_entity": "Dynamic Vehicle Selector Entity"
         }
+      },
+      "charger_preview": {
+        "title": "Charging Station Verification",
+        "description": "Review configuration for {charger_name}:\n\n• ⚡ Status Sensor: {status_preview}\n• 📊 Energy Meter: {energy_preview} ({energy_type})\n• ⏱️ Anti-bounce delay: {debounce_seconds}s\n• 🚗 Assignment Strategy: {assignment_mode}\n\nClick Submit to save."
       }
     },
     "error": {
       "invalid_name": "Please enter a valid charger name.",
       "select_vehicle": "Please select a vehicle for fixed assignment.",
-      "select_entity": "Please select an entity for dynamic selection."
+      "select_entity": "Please select an entity for dynamic selection.",
+      "invalid_battery_unit": "Battery SoC sensor unit must be '%'.",
+      "invalid_odometer_unit": "Odometer sensor unit must be a distance ('km' or 'mi').",
+      "invalid_energy_unit": "Energy meter unit must be an energy unit ('kWh' or 'Wh'). Do not select instantaneous power (kW/W).",
+      "invalid_numeric_state": "The selected entity state must be a valid number.",
+      "invalid_battery_range": "Battery SoC must be between 0% and 100%.",
+      "invalid_odometer_range": "Odometer value cannot be negative.",
+      "invalid_energy_range": "Energy meter value cannot be negative."
     }
   },
   "selector": {

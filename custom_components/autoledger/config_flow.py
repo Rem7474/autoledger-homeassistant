@@ -67,6 +67,121 @@ def _slugify(text: str) -> str:
     return slug or "charger"
 
 
+def _inspect_entity(hass: Any, entity_id: str | None) -> dict[str, Any]:
+    """Inspect entity state, unit, and return formatted preview."""
+    if not entity_id:
+        return {
+            "exists": False,
+            "state": None,
+            "unit": None,
+            "formatted": "Non configuré",
+        }
+
+    state_obj = hass.states.get(entity_id) if hass else None
+    if state_obj is None:
+        return {
+            "exists": False,
+            "state": None,
+            "unit": None,
+            "formatted": f"{entity_id} (État indisponible)",
+        }
+
+    val = state_obj.state
+    unit = state_obj.attributes.get("unit_of_measurement") or ""
+
+    if val in ("unavailable", "unknown"):
+        display_val = "Indisponible" if val == "unavailable" else "Inconnu"
+        formatted = f"{display_val} (Unité : {unit})" if unit else display_val
+    else:
+        try:
+            f_val = float(val)
+            if f_val.is_integer():
+                formatted_num = f"{int(f_val):,}".replace(",", " ")
+            else:
+                formatted_num = f"{f_val:,.1f}".replace(",", " ")
+            formatted = f"{formatted_num} {unit}".strip()
+        except ValueError:
+            formatted = f"{val} {unit}".strip()
+
+    return {
+        "exists": True,
+        "state": val,
+        "unit": unit,
+        "formatted": formatted,
+    }
+
+
+def _validate_battery_sensor(hass: Any, entity_id: str | None) -> str | None:
+    """Validate battery sensor unit and state. Returns error key or None."""
+    if not entity_id:
+        return None
+    state_obj = hass.states.get(entity_id) if hass else None
+    if not state_obj:
+        return None
+
+    unit = state_obj.attributes.get("unit_of_measurement")
+    if unit and unit != "%":
+        return "invalid_battery_unit"
+
+    val = state_obj.state
+    if val not in ("unavailable", "unknown"):
+        try:
+            num = float(val)
+            if num < 0 or num > 100:
+                return "invalid_battery_range"
+        except ValueError:
+            return "invalid_numeric_state"
+    return None
+
+
+def _validate_odometer_sensor(hass: Any, entity_id: str | None) -> str | None:
+    """Validate odometer sensor unit and state. Returns error key or None."""
+    if not entity_id:
+        return None
+    state_obj = hass.states.get(entity_id) if hass else None
+    if not state_obj:
+        return None
+
+    unit = state_obj.attributes.get("unit_of_measurement")
+    valid_distance_units = {"km", "mi", "m"}
+    if unit and unit.lower() not in valid_distance_units:
+        return "invalid_odometer_unit"
+
+    val = state_obj.state
+    if val not in ("unavailable", "unknown"):
+        try:
+            num = float(val)
+            if num < 0:
+                return "invalid_odometer_range"
+        except ValueError:
+            return "invalid_numeric_state"
+    return None
+
+
+def _validate_energy_sensor(hass: Any, entity_id: str | None) -> str | None:
+    """Validate energy meter sensor unit and state. Returns error key or None."""
+    if not entity_id:
+        return None
+    state_obj = hass.states.get(entity_id) if hass else None
+    if not state_obj:
+        return None
+
+    unit = state_obj.attributes.get("unit_of_measurement")
+    valid_energy_units = {"kwh", "wh", "mwh"}
+    if unit and unit.lower() not in valid_energy_units:
+        return "invalid_energy_unit"
+
+    val = state_obj.state
+    if val not in ("unavailable", "unknown"):
+        try:
+            num = float(val)
+            if num < 0:
+                return "invalid_energy_range"
+        except ValueError:
+            return "invalid_numeric_state"
+    return None
+
+
 class AutoLedgerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for AutoLedger."""
 
@@ -132,6 +247,70 @@ class AutoLedgerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
+    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Handle reconfiguration of the integration connection."""
+        errors: dict[str, str] = {}
+        entry = self._get_reconfigure_entry()
+
+        if user_input is not None:
+            host = user_input[CONF_HOST].rstrip("/")
+            api_key = user_input[CONF_API_KEY]
+            verify_ssl = user_input.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
+
+            session = async_get_clientsession(self.hass)
+            client = AutoLedgerApiClient(
+                host=host,
+                api_key=api_key,
+                session=session,
+                verify_ssl=verify_ssl,
+            )
+
+            try:
+                await client.async_test_connection()
+            except AutoLedgerAuthError:
+                errors["base"] = "invalid_auth"
+            except (AutoLedgerConnectionError, AutoLedgerTimeoutError):
+                errors["base"] = "cannot_connect"
+            except Exception as err:
+                _LOGGER.exception("Unexpected exception during reconfigure: %s", err)
+                errors["base"] = "unknown"
+            else:
+                return self.async_update_reload_and_abort(
+                    entry,
+                    data_updates={
+                        CONF_HOST: host,
+                        CONF_API_KEY: api_key,
+                        CONF_VERIFY_SSL: verify_ssl,
+                    },
+                )
+
+        initial_host = entry.data.get(CONF_HOST, "") if entry else ""
+        initial_key = entry.data.get(CONF_API_KEY, "") if entry else ""
+        initial_ssl = (
+            entry.data.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL) if entry else DEFAULT_VERIFY_SSL
+        )
+
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_HOST, default=initial_host): selector.TextSelector(
+                    selector.TextSelectorConfig(type=selector.TextSelectorType.URL)
+                ),
+                vol.Required(CONF_API_KEY, default=initial_key): selector.TextSelector(
+                    selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
+                ),
+                vol.Optional(
+                    CONF_VERIFY_SSL,
+                    default=initial_ssl,
+                ): selector.BooleanSelector(),
+            }
+        )
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=schema,
+            errors=errors,
+        )
+
     @staticmethod
     @callback
     def async_get_options_flow(
@@ -165,10 +344,25 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
         )
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        """Manage the main options menu (two main panes: vehicles & chargers)."""
+        """Manage the main options menu (direct actions for vehicles & chargers)."""
+        configured_vehicles = self._config_entry.options.get(CONF_VEHICLES, {})
+        configured_chargers = self._config_entry.options.get(CONF_CHARGERS, {})
+
+        menu_options = []
+        if configured_vehicles:
+            menu_options.append("edit_vehicle")
+        menu_options.append("add_vehicle")
+
+        if configured_chargers:
+            menu_options.append("edit_charger")
+        menu_options.append("add_charger")
+
+        if configured_vehicles or configured_chargers:
+            menu_options.append("remove_item")
+
         return self.async_show_menu(
             step_id="init",
-            menu_options=["manage_vehicles", "manage_chargers"],
+            menu_options=menu_options,
         )
 
     # -------------------------------------------------------------------------
@@ -177,7 +371,7 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_manage_vehicles(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Manage vehicle list: add, edit, remove."""
+        """Manage vehicle list: add, edit, remove (kept for backward compatibility)."""
         configured_vehicles = self._config_entry.options.get(CONF_VEHICLES, {})
         menu_options = ["add_vehicle"]
         if configured_vehicles:
@@ -249,11 +443,19 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
         )
 
     async def async_step_edit_vehicle(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        """Select a vehicle to edit."""
+        """Select a vehicle to edit (skips selector if only one vehicle exists)."""
         configured_vehicles: dict[str, Any] = self._config_entry.options.get(CONF_VEHICLES, {})
 
         if not configured_vehicles:
             return await self.async_step_manage_vehicles()
+
+        # If only 1 vehicle exists, skip dropdown and go straight to mapping
+        if len(configured_vehicles) == 1 and user_input is None:
+            vehicle_id = next(iter(configured_vehicles))
+            v_data = configured_vehicles[vehicle_id]
+            self._temp_vehicle = dict(v_data)
+            self._temp_vehicle[CONF_VEHICLE_ID] = vehicle_id
+            return await self.async_step_vehicle_mapping()
 
         if user_input is not None:
             vehicle_id = user_input[CONF_VEHICLE_ID]
@@ -333,27 +535,27 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_vehicle_mapping(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Configure vehicle telemetry entities."""
+        """Configure vehicle telemetry entities with live preview and unit validation."""
         errors: dict[str, str] = {}
-        vehicle_id = self._temp_vehicle.get(CONF_VEHICLE_ID, "")
 
         if user_input is not None:
-            configured_vehicles: dict[str, Any] = dict(
-                self._config_entry.options.get(CONF_VEHICLES, {})
-            )
+            battery_ent = user_input.get(CONF_BATTERY_SOC_ENTITY)
+            odometer_ent = user_input.get(CONF_ODOMETER_ENTITY)
+            charging_ent = user_input.get(CONF_CHARGING_STATUS_ENTITY)
 
-            configured_vehicles[vehicle_id] = {
-                CONF_VEHICLE_ID: vehicle_id,
-                CONF_VEHICLE_NAME: self._temp_vehicle.get(CONF_VEHICLE_NAME, vehicle_id),
-                CONF_DEVICE_ID: self._temp_vehicle.get(CONF_DEVICE_ID),
-                CONF_BATTERY_SOC_ENTITY: user_input.get(CONF_BATTERY_SOC_ENTITY),
-                CONF_ODOMETER_ENTITY: user_input.get(CONF_ODOMETER_ENTITY),
-                CONF_CHARGING_STATUS_ENTITY: user_input.get(CONF_CHARGING_STATUS_ENTITY),
-            }
+            battery_err = _validate_battery_sensor(self.hass, battery_ent)
+            if battery_err:
+                errors[CONF_BATTERY_SOC_ENTITY] = battery_err
 
-            new_options = dict(self._config_entry.options)
-            new_options[CONF_VEHICLES] = configured_vehicles
-            return self.async_create_entry(title="", data=new_options)
+            odometer_err = _validate_odometer_sensor(self.hass, odometer_ent)
+            if odometer_err:
+                errors[CONF_ODOMETER_ENTITY] = odometer_err
+
+            if not errors:
+                self._temp_vehicle[CONF_BATTERY_SOC_ENTITY] = battery_ent
+                self._temp_vehicle[CONF_ODOMETER_ENTITY] = odometer_ent
+                self._temp_vehicle[CONF_CHARGING_STATUS_ENTITY] = charging_ent
+                return await self.async_step_vehicle_preview()
 
         device_id = self._temp_vehicle.get(CONF_DEVICE_ID)
         prefill_battery = self._temp_vehicle.get(CONF_BATTERY_SOC_ENTITY)
@@ -394,6 +596,22 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
                 ):
                     prefill_charging = ent_id
 
+        # Generate live preview for prefilled/detected values
+        preview_lines = []
+        if prefill_battery:
+            b_info = _inspect_entity(self.hass, prefill_battery)
+            preview_lines.append(f"• Batterie SoC : {b_info['formatted']}")
+        if prefill_odometer:
+            o_info = _inspect_entity(self.hass, prefill_odometer)
+            preview_lines.append(f"• Odomètre : {o_info['formatted']}")
+        if prefill_charging:
+            c_info = _inspect_entity(self.hass, prefill_charging)
+            preview_lines.append(f"• État de charge : {c_info['formatted']}")
+
+        preview_section = (
+            "\n".join(preview_lines) if preview_lines else "Sélectionnez vos capteurs ci-dessous."
+        )
+
         fields: dict[Any, Any] = {
             vol.Optional(
                 CONF_BATTERY_SOC_ENTITY,
@@ -427,6 +645,50 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
             step_id="vehicle_mapping",
             data_schema=vol.Schema(fields),
             errors=errors,
+            description_placeholders={"preview_section": preview_section},
+        )
+
+    async def async_step_vehicle_preview(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Preview vehicle telemetry values and confirm configuration."""
+        if user_input is not None:
+            vehicle_id = self._temp_vehicle[CONF_VEHICLE_ID]
+            configured_vehicles: dict[str, Any] = dict(
+                self._config_entry.options.get(CONF_VEHICLES, {})
+            )
+
+            configured_vehicles[vehicle_id] = {
+                CONF_VEHICLE_ID: vehicle_id,
+                CONF_VEHICLE_NAME: self._temp_vehicle.get(CONF_VEHICLE_NAME, vehicle_id),
+                CONF_DEVICE_ID: self._temp_vehicle.get(CONF_DEVICE_ID),
+                CONF_BATTERY_SOC_ENTITY: self._temp_vehicle.get(CONF_BATTERY_SOC_ENTITY),
+                CONF_ODOMETER_ENTITY: self._temp_vehicle.get(CONF_ODOMETER_ENTITY),
+                CONF_CHARGING_STATUS_ENTITY: self._temp_vehicle.get(CONF_CHARGING_STATUS_ENTITY),
+            }
+
+            new_options = dict(self._config_entry.options)
+            new_options[CONF_VEHICLES] = configured_vehicles
+            return self.async_create_entry(title="", data=new_options)
+
+        v_name = self._temp_vehicle.get(CONF_VEHICLE_NAME, "Véhicule")
+        b_info = _inspect_entity(self.hass, self._temp_vehicle.get(CONF_BATTERY_SOC_ENTITY))
+        o_info = _inspect_entity(self.hass, self._temp_vehicle.get(CONF_ODOMETER_ENTITY))
+        c_info = _inspect_entity(self.hass, self._temp_vehicle.get(CONF_CHARGING_STATUS_ENTITY))
+
+        b_disp = f"{b_info['formatted']} ✅" if b_info["exists"] else b_info["formatted"]
+        o_disp = f"{o_info['formatted']} ✅" if o_info["exists"] else o_info["formatted"]
+        c_disp = f"{c_info['formatted']} ✅" if c_info["exists"] else c_info["formatted"]
+
+        return self.async_show_form(
+            step_id="vehicle_preview",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "vehicle_name": v_name,
+                "battery_preview": b_disp,
+                "odometer_preview": o_disp,
+                "charging_preview": c_disp,
+            },
         )
 
     # -------------------------------------------------------------------------
@@ -435,7 +697,7 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_manage_chargers(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Manage charging stations: add, edit, remove."""
+        """Manage charging stations: add, edit, remove (kept for backward compatibility)."""
         configured_chargers = self._config_entry.options.get(CONF_CHARGERS, {})
         menu_options = ["add_charger"]
         if configured_chargers:
@@ -452,11 +714,19 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
         return await self.async_step_charger_step1()
 
     async def async_step_edit_charger(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        """Select a charging station to edit."""
+        """Select a charging station to edit (skips selector if only one charger exists)."""
         configured_chargers: dict[str, Any] = self._config_entry.options.get(CONF_CHARGERS, {})
 
         if not configured_chargers:
             return await self.async_step_manage_chargers()
+
+        # If only 1 charger exists, skip dropdown and go straight to step 1
+        if len(configured_chargers) == 1 and user_input is None:
+            charger_id = next(iter(configured_chargers))
+            c_data = configured_chargers[charger_id]
+            self._temp_charger = dict(c_data)
+            self._temp_charger[CONF_CHARGER_ID] = charger_id
+            return await self.async_step_charger_step1()
 
         if user_input is not None:
             charger_id = user_input[CONF_CHARGER_ID]
@@ -543,6 +813,11 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
             if not user_input.get(CONF_CHARGER_NAME, "").strip():
                 errors["base"] = "invalid_name"
 
+            energy_ent = user_input.get(CONF_ENERGY_METER_ENTITY)
+            energy_err = _validate_energy_sensor(self.hass, energy_ent)
+            if energy_err:
+                errors[CONF_ENERGY_METER_ENTITY] = energy_err
+
             if not errors:
                 charger_id = self._temp_charger.get(CONF_CHARGER_ID)
                 if not charger_id:
@@ -566,6 +841,17 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
         )
         prefill_debounce = self._temp_charger.get(CONF_DEBOUNCE_SECONDS, DEFAULT_DEBOUNCE_SECONDS)
         prefill_location = self._temp_charger.get(CONF_CHARGING_LOCATION, DEFAULT_CHARGING_LOCATION)
+
+        preview_lines = []
+        if prefill_status:
+            s_info = _inspect_entity(self.hass, prefill_status)
+            preview_lines.append(f"• Statut : {s_info['formatted']}")
+        if prefill_energy:
+            e_info = _inspect_entity(self.hass, prefill_energy)
+            preview_lines.append(f"• Énergie : {e_info['formatted']}")
+        preview_section = (
+            "\n".join(preview_lines) if preview_lines else "Sélectionnez vos capteurs ci-dessous."
+        )
 
         fields: dict[Any, Any] = {}
         if prefill_name:
@@ -638,6 +924,7 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
             step_id="charger_step1",
             data_schema=vol.Schema(fields),
             errors=errors,
+            description_placeholders={"preview_section": preview_section},
         )
 
     async def async_step_charger_step2(
@@ -658,35 +945,14 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
                 errors["base"] = "select_entity"
 
             if not errors:
-                charger_id = self._temp_charger[CONF_CHARGER_ID]
-                new_options = dict(self._config_entry.options)
-                configured_chargers = dict(new_options.get(CONF_CHARGERS, {}))
-
-                configured_chargers[charger_id] = {
-                    CONF_CHARGER_ID: charger_id,
-                    CONF_CHARGER_NAME: self._temp_charger[CONF_CHARGER_NAME],
-                    CONF_CHARGING_STATUS_ENTITY: self._temp_charger[CONF_CHARGING_STATUS_ENTITY],
-                    CONF_ENERGY_METER_ENTITY: self._temp_charger.get(CONF_ENERGY_METER_ENTITY),
-                    CONF_ENERGY_METER_TYPE: self._temp_charger.get(
-                        CONF_ENERGY_METER_TYPE, ENERGY_METER_TYPE_TOTAL_INCREASING
-                    ),
-                    CONF_DEBOUNCE_SECONDS: self._temp_charger.get(
-                        CONF_DEBOUNCE_SECONDS, DEFAULT_DEBOUNCE_SECONDS
-                    ),
-                    CONF_CHARGING_LOCATION: self._temp_charger.get(
-                        CONF_CHARGING_LOCATION, DEFAULT_CHARGING_LOCATION
-                    ),
-                    CONF_ASSIGNMENT_MODE: mode,
-                    CONF_LINKED_VEHICLE_ID: linked_vehicle
-                    if mode == ASSIGNMENT_MODE_FIXED
-                    else None,
-                    CONF_VEHICLE_SELECT_ENTITY: (
-                        vehicle_select if mode == ASSIGNMENT_MODE_INPUT_SELECT else None
-                    ),
-                }
-
-                new_options[CONF_CHARGERS] = configured_chargers
-                return self.async_create_entry(title="", data=new_options)
+                self._temp_charger[CONF_ASSIGNMENT_MODE] = mode
+                self._temp_charger[CONF_LINKED_VEHICLE_ID] = (
+                    linked_vehicle if mode == ASSIGNMENT_MODE_FIXED else None
+                )
+                self._temp_charger[CONF_VEHICLE_SELECT_ENTITY] = (
+                    vehicle_select if mode == ASSIGNMENT_MODE_INPUT_SELECT else None
+                )
+                return await self.async_step_charger_preview()
 
         prefill_mode = self._temp_charger.get(CONF_ASSIGNMENT_MODE, DEFAULT_ASSIGNMENT_MODE)
         prefill_linked_vehicle = self._temp_charger.get(CONF_LINKED_VEHICLE_ID)
@@ -757,4 +1023,117 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
             step_id="charger_step2",
             data_schema=vol.Schema(fields),
             errors=errors,
+        )
+
+    async def async_step_charger_preview(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Preview charger configuration and confirm."""
+        if user_input is not None:
+            charger_id = self._temp_charger[CONF_CHARGER_ID]
+            new_options = dict(self._config_entry.options)
+            configured_chargers = dict(new_options.get(CONF_CHARGERS, {}))
+
+            configured_chargers[charger_id] = {
+                CONF_CHARGER_ID: charger_id,
+                CONF_CHARGER_NAME: self._temp_charger[CONF_CHARGER_NAME],
+                CONF_CHARGING_STATUS_ENTITY: self._temp_charger[CONF_CHARGING_STATUS_ENTITY],
+                CONF_ENERGY_METER_ENTITY: self._temp_charger.get(CONF_ENERGY_METER_ENTITY),
+                CONF_ENERGY_METER_TYPE: self._temp_charger.get(
+                    CONF_ENERGY_METER_TYPE, ENERGY_METER_TYPE_TOTAL_INCREASING
+                ),
+                CONF_DEBOUNCE_SECONDS: self._temp_charger.get(
+                    CONF_DEBOUNCE_SECONDS, DEFAULT_DEBOUNCE_SECONDS
+                ),
+                CONF_CHARGING_LOCATION: self._temp_charger.get(
+                    CONF_CHARGING_LOCATION, DEFAULT_CHARGING_LOCATION
+                ),
+                CONF_ASSIGNMENT_MODE: self._temp_charger.get(
+                    CONF_ASSIGNMENT_MODE, DEFAULT_ASSIGNMENT_MODE
+                ),
+                CONF_LINKED_VEHICLE_ID: self._temp_charger.get(CONF_LINKED_VEHICLE_ID),
+                CONF_VEHICLE_SELECT_ENTITY: self._temp_charger.get(CONF_VEHICLE_SELECT_ENTITY),
+            }
+
+            new_options[CONF_CHARGERS] = configured_chargers
+            return self.async_create_entry(title="", data=new_options)
+
+        charger_name = self._temp_charger.get(CONF_CHARGER_NAME, "Borne")
+        s_info = _inspect_entity(self.hass, self._temp_charger.get(CONF_CHARGING_STATUS_ENTITY))
+        e_info = _inspect_entity(self.hass, self._temp_charger.get(CONF_ENERGY_METER_ENTITY))
+
+        s_disp = f"{s_info['formatted']} ✅" if s_info["exists"] else s_info["formatted"]
+        e_disp = f"{e_info['formatted']} ✅" if e_info["exists"] else e_info["formatted"]
+        e_type = self._temp_charger.get(CONF_ENERGY_METER_TYPE, "total_increasing")
+        debounce = self._temp_charger.get(CONF_DEBOUNCE_SECONDS, DEFAULT_DEBOUNCE_SECONDS)
+        mode = self._temp_charger.get(CONF_ASSIGNMENT_MODE, DEFAULT_ASSIGNMENT_MODE)
+
+        return self.async_show_form(
+            step_id="charger_preview",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "charger_name": charger_name,
+                "status_preview": s_disp,
+                "energy_preview": e_disp,
+                "energy_type": e_type,
+                "debounce_seconds": str(debounce),
+                "assignment_mode": mode,
+            },
+        )
+
+    # -------------------------------------------------------------------------
+    # UNIFIED REMOVE ITEM
+    # -------------------------------------------------------------------------
+    async def async_step_remove_item(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Select a vehicle or charging station to remove."""
+        configured_vehicles = dict(self._config_entry.options.get(CONF_VEHICLES, {}))
+        configured_chargers = dict(self._config_entry.options.get(CONF_CHARGERS, {}))
+
+        if not configured_vehicles and not configured_chargers:
+            return await self.async_step_init()
+
+        if user_input is not None:
+            selected = user_input.get("item_to_remove", "")
+            new_options = dict(self._config_entry.options)
+            if selected.startswith("vehicle:"):
+                vid = selected.removeprefix("vehicle:")
+                if vid in configured_vehicles:
+                    del configured_vehicles[vid]
+                    new_options[CONF_VEHICLES] = configured_vehicles
+            elif selected.startswith("charger:"):
+                cid = selected.removeprefix("charger:")
+                if cid in configured_chargers:
+                    del configured_chargers[cid]
+                    new_options[CONF_CHARGERS] = configured_chargers
+
+            return self.async_create_entry(title="", data=new_options)
+
+        options = [
+            selector.SelectOptionDict(
+                value=f"vehicle:{vid}",
+                label=f"🚗 {vdata.get(CONF_VEHICLE_NAME, f'Vehicle {vid}')}",
+            )
+            for vid, vdata in configured_vehicles.items()
+        ] + [
+            selector.SelectOptionDict(
+                value=f"charger:{cid}",
+                label=f"⚡ {cdata.get(CONF_CHARGER_NAME, f'Charger {cid}')}",
+            )
+            for cid, cdata in configured_chargers.items()
+        ]
+
+        schema = vol.Schema(
+            {
+                vol.Required("item_to_remove"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=options,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+            }
+        )
+
+        return self.async_show_form(
+            step_id="remove_item",
+            data_schema=schema,
         )
