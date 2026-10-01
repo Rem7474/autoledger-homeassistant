@@ -7,6 +7,9 @@ from typing import Any
 
 import aiohttp
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.util import dt as dt_util
+
+from .const import EVENT_TYPE_ODOMETER_UPDATE
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -255,3 +258,47 @@ class AutoLedgerApiClient:
             },
         }
         return await self.async_post_event(charge_payload)
+
+    async def async_update_odometer(
+        self,
+        vehicle_id: str,
+        odometer_km: float,
+        timestamp: str | None = None,
+    ) -> dict[str, Any]:
+        """Send updated vehicle odometer reading to AutoLedger."""
+        payload = {
+            "vehicle_id": vehicle_id,
+            "event_type": EVENT_TYPE_ODOMETER_UPDATE,
+            "source": "homeassistant",
+            "timestamp": timestamp or dt_util.utcnow().isoformat(),
+            "data": {
+                "odometer_km": round(odometer_km, 1),
+            },
+        }
+        try:
+            res = await self._request(
+                "POST",
+                "/api/integrations/homeassistant/event",
+                json=payload,
+            )
+            return res if isinstance(res, dict) else {"status": "success"}
+        except AutoLedgerApiError as err:
+            # Fallback to odometer-checkpoints if /api/integrations/homeassistant/event is 404
+            if err.status_code == 404:
+                _LOGGER.info(
+                    "Endpoint /api/integrations/homeassistant/event returned 404. "
+                    "Falling back to /api/vehicles/%s/odometer-checkpoints",
+                    vehicle_id,
+                )
+                checkpoint_payload = {
+                    "date": timestamp or dt_util.utcnow().isoformat(),
+                    "odometer": round(odometer_km, 1),
+                    "notes": "Home Assistant sync",
+                }
+                res = await self._request(
+                    "POST",
+                    f"/api/vehicles/{vehicle_id}/odometer-checkpoints",
+                    json=checkpoint_payload,
+                )
+                return res if isinstance(res, dict) else {"status": "success"}
+            raise
