@@ -448,13 +448,16 @@ async def test_assignment_mode_unassigned(mock_hass, mock_client):
 async def test_session_error_handling(mock_hass, mock_client):
     """Test sync status is set to error if post_event raises an exception."""
     mock_client.async_post_event.side_effect = RuntimeError("Server Down")
+    mock_hass.states.set("sensor.wallbox_energy", "100.0")
 
     config = {
         CONF_CHARGING_STATUS_ENTITY: "binary_sensor.car_charging",
+        CONF_ENERGY_METER_ENTITY: "sensor.wallbox_energy",
     }
     tracker = AutoLedgerChargerTracker(mock_hass, mock_client, "v-1", config)
 
     await tracker._async_on_charging_status_changed(create_state_event("off", "on"))
+    mock_hass.states.set("sensor.wallbox_energy", "110.0")
     await tracker._async_on_charging_status_changed(create_state_event("on", "off"))
     await tracker._async_handle_debounce_expired(None)
 
@@ -495,3 +498,66 @@ async def test_tracker_unload(mock_hass, mock_client):
 
     await tracker.async_unload()
     assert tracker._debounce_unsub is None
+
+
+@pytest.mark.asyncio
+async def test_session_payload_identifies_the_session_and_ends_at_the_stop(mock_hass, mock_client):
+    """The event carries a stable identifier and ends when charging stopped, not after the debounce."""
+    mock_hass.states.set("sensor.wallbox_energy", "500.0")
+    config = {
+        CONF_CHARGING_STATUS_ENTITY: "binary_sensor.car_charging",
+        CONF_ENERGY_METER_ENTITY: "sensor.wallbox_energy",
+        CONF_ENERGY_METER_TYPE: ENERGY_METER_TYPE_TOTAL_INCREASING,
+    }
+    tracker = AutoLedgerChargerTracker(mock_hass, mock_client, "garage", config)
+
+    await tracker._async_on_charging_status_changed(create_state_event("off", "on"))
+    start_time = tracker.session_start_time
+    mock_hass.states.set("sensor.wallbox_energy", "512.0")
+    await tracker._async_on_charging_status_changed(create_state_event("on", "off"))
+    stop_time = tracker.session_stop_time
+    assert stop_time is not None
+    await tracker._async_handle_debounce_expired(None)
+
+    payload = mock_client.async_post_event.call_args[0][0]
+    assert payload["event_id"] == f"garage:{start_time}"
+    assert payload["data"]["start_time"] == start_time
+    assert payload["data"]["end_time"] == stop_time
+
+
+@pytest.mark.asyncio
+async def test_unavailable_charger_does_not_end_the_session(mock_hass, mock_client):
+    """A charger dropping off the network is not a stop."""
+    config = {CONF_CHARGING_STATUS_ENTITY: "binary_sensor.car_charging"}
+    tracker = AutoLedgerChargerTracker(mock_hass, mock_client, "v-1", config)
+
+    await tracker._async_on_charging_status_changed(create_state_event("off", "on"))
+    start_time = tracker.session_start_time
+    for offline in ("unavailable", "unknown"):
+        await tracker._async_on_charging_status_changed(create_state_event("on", offline))
+        assert tracker.state == STATE_CHARGING
+        assert tracker._debounce_unsub is None
+
+    await tracker._async_on_charging_status_changed(create_state_event("unavailable", "on"))
+    assert tracker.state == STATE_CHARGING
+    assert tracker.session_start_time == start_time
+    assert mock_client.async_post_event.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_session_without_energy_is_not_sent(mock_hass, mock_client):
+    """Plugged in without charging: nothing is sent and the tracker is ready for the next session."""
+    mock_hass.states.set("sensor.wallbox_energy", "700.0")
+    config = {
+        CONF_CHARGING_STATUS_ENTITY: "binary_sensor.car_charging",
+        CONF_ENERGY_METER_ENTITY: "sensor.wallbox_energy",
+    }
+    tracker = AutoLedgerChargerTracker(mock_hass, mock_client, "v-1", config)
+
+    await tracker._async_on_charging_status_changed(create_state_event("off", "on"))
+    await tracker._async_on_charging_status_changed(create_state_event("on", "off"))
+    await tracker._async_handle_debounce_expired(None)
+
+    assert mock_client.async_post_event.call_count == 0
+    assert tracker.state == STATE_IDLE
+    assert tracker.session_start_time is None
