@@ -52,6 +52,9 @@ CHARGING_POSITIVE_STATES = {
     "active",
 }
 
+# States of an entity that is offline or not reporting yet: they tell nothing about charging
+UNKNOWN_STATES = {"unavailable", "unknown"}
+
 CHARGING_NEGATIVE_STATES = {
     "off",
     "idle",
@@ -125,6 +128,7 @@ class AutoLedgerChargerTracker:
         # State tracking
         self.state: str = STATE_IDLE
         self.session_start_time: str | None = None
+        self.session_stop_time: str | None = None
         self.energy_start: float | None = None
         self.energy_last_seen: float | None = None
         self.last_energy_kwh: float | None = None
@@ -290,6 +294,10 @@ class AutoLedgerChargerTracker:
 
         if new_val == old_val:
             return
+        if new_val.lower() in UNKNOWN_STATES:
+            # The charger dropped off the network: not a stop, the session goes on when it comes back
+            _LOGGER.debug("Charger %s is %s, keeping the session as is", self.charger_id, new_val)
+            return
 
         is_charging = self._is_state_charging(new_val, self.charging_status_entity)
 
@@ -375,6 +383,8 @@ class AutoLedgerChargerTracker:
         if self._correlated_vehicle_id is None:
             self._check_correlation()
 
+        # The session ends when charging stopped, not when the anti-bounce delay runs out
+        self.session_stop_time = dt_util.utcnow().isoformat()
         self.state = STATE_COOLING_DOWN
         _LOGGER.info(
             "Charging paused on charger %s. Arming anti-bounce timer (%s seconds)",
@@ -400,7 +410,7 @@ class AutoLedgerChargerTracker:
 
     async def async_finalize_session(self) -> None:
         """Compute session delta, resolve vehicle, and post event to AutoLedger."""
-        end_time = dt_util.utcnow().isoformat()
+        end_time = self.session_stop_time or dt_util.utcnow().isoformat()
         start_time = self.session_start_time or end_time
 
         current_energy = self._get_entity_numeric_state(self.energy_meter_entity)
@@ -419,6 +429,16 @@ class AutoLedgerChargerTracker:
                 energy_added_kwh = max(0.0, current_energy)
 
         self.last_energy_kwh = round(energy_added_kwh, 3)
+
+        if self.last_energy_kwh <= 0:
+            # Plugged in without charging, or no energy meter: nothing to record (AutoLedger refuses 0 kWh)
+            _LOGGER.info(
+                "Charging session on charger %s added no energy, not sent", self.charger_id
+            )
+            self.state = STATE_IDLE
+            self._reset_session_data()
+            self._notify_listeners()
+            return
 
         # Resolve vehicle and telemetry based on assignment_mode
         resolved_vehicle_id: str | None = None
@@ -508,6 +528,8 @@ class AutoLedgerChargerTracker:
             odometer_end = None
 
         payload = {
+            # Same session, same identifier: AutoLedger recognises a resent session
+            "event_id": f"{self.charger_id}:{start_time}",
             "vehicle_id": resolved_vehicle_id,
             "event_type": "charging_session_end",
             "source": "homeassistant",
@@ -567,6 +589,7 @@ class AutoLedgerChargerTracker:
     def _reset_session_data(self) -> None:
         """Reset internal session registers."""
         self.session_start_time = None
+        self.session_stop_time = None
         self.energy_start = None
         self.energy_last_seen = None
         self.soc_start = None
