@@ -13,6 +13,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .api import AutoLedgerApiClient
 from .const import (
     CONF_API_KEY,
+    CONF_CHARGERS,
     CONF_HOST,
     CONF_VEHICLES,
     CONF_VERIFY_SSL,
@@ -22,7 +23,7 @@ from .const import (
 )
 from .coordinator import AutoLedgerDataUpdateCoordinator
 from .services import async_setup_services, async_unload_services
-from .session_tracker import AutoLedgerSessionTracker
+from .session_tracker import AutoLedgerChargerTracker
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,6 +51,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     configured_vehicles = entry.options.get(CONF_VEHICLES, {})
+    configured_chargers = entry.options.get(CONF_CHARGERS, {})
 
     coordinator = AutoLedgerDataUpdateCoordinator(
         hass=hass,
@@ -61,18 +63,34 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Initial data load
     await coordinator.async_config_entry_first_refresh()
 
-    # Setup session trackers for each configured vehicle
-    trackers: dict[str, AutoLedgerSessionTracker] = {}
-    for vehicle_id, vehicle_conf in configured_vehicles.items():
-        tracker = AutoLedgerSessionTracker(
+    # Setup charger trackers for each configured charging station
+    trackers: dict[str, AutoLedgerChargerTracker] = {}
+    for charger_id, charger_conf in configured_chargers.items():
+        tracker = AutoLedgerChargerTracker(
             hass=hass,
             client=client,
-            vehicle_id=vehicle_id,
-            config=vehicle_conf,
+            charger_id=charger_id,
+            config=charger_conf,
+            vehicles_config=configured_vehicles,
             coordinator=coordinator,
         )
         await tracker.async_setup()
-        trackers[vehicle_id] = tracker
+        trackers[charger_id] = tracker
+
+    # Backward compatibility fallback for legacy vehicle-attached configs
+    if not configured_chargers:
+        for vehicle_id, vehicle_conf in configured_vehicles.items():
+            if vehicle_conf.get("charging_status_entity"):
+                tracker = AutoLedgerChargerTracker(
+                    hass=hass,
+                    client=client,
+                    charger_id=vehicle_id,
+                    config=vehicle_conf,
+                    vehicles_config=configured_vehicles,
+                    coordinator=coordinator,
+                )
+                await tracker.async_setup()
+                trackers[vehicle_id] = tracker
 
     entry_data = {
         "client": client,

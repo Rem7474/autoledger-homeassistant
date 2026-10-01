@@ -34,13 +34,17 @@ async def async_get_config_entry_diagnostics(
     trackers: dict[str, AutoLedgerSessionTracker] = data.get("trackers", {})
 
     trackers_diagnostics: dict[str, Any] = {}
-    for vid, tracker in trackers.items():
-        trackers_diagnostics[vid] = {
+    for cid, tracker in trackers.items():
+        trackers_diagnostics[cid] = {
+            "charger_id": getattr(tracker, "charger_id", cid),
+            "charger_name": getattr(tracker, "charger_name", cid),
+            "assignment_mode": getattr(tracker, "assignment_mode", None),
             "state": tracker.state,
             "session_start_time": tracker.session_start_time,
-            "soc_start": tracker.soc_start,
-            "odometer_start": tracker.odometer_start,
-            "energy_start": tracker.energy_start,
+            "soc_start": getattr(tracker, "soc_start", None),
+            "odometer_start": getattr(tracker, "odometer_start", None),
+            "energy_start": getattr(tracker, "energy_start", None),
+            "last_energy_kwh": getattr(tracker, "last_energy_kwh", None),
             "debounce_seconds": tracker.debounce_seconds,
             "debounce_timer_active": tracker._debounce_unsub is not None,
             "sync_status": tracker.sync_status,

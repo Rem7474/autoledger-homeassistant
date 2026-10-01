@@ -1,0 +1,98 @@
+blueprint:
+  name: AutoLedger - Charging Session Sync
+  description: >
+    Automatically synchronizes completed EV charging sessions to AutoLedger.
+    Triggers when your charger transitions from charging to idle (or when session energy stops increasing).
+  domain: automation
+  input:
+    charger_status_entity:
+      name: Charger State Entity
+      description: The sensor or binary sensor indicating charger state (e.g. charging/idle or on/off).
+      selector:
+        entity:
+          domain: [sensor, binary_sensor]
+    energy_sensor_entity:
+      name: Energy Meter Entity
+      description: Sensor measuring session energy added or cumulative kWh.
+      selector:
+        entity:
+          domain: sensor
+          device_class: energy
+    autoledger_url:
+      name: AutoLedger URL
+      description: The base URL of your AutoLedger instance (e.g. https://autoledger.example.com).
+      default: "http://localhost:8080"
+      selector:
+        text:
+    autoledger_api_token:
+      name: AutoLedger API Token
+      description: Secret API Token generated in AutoLedger (Account -> API Tokens).
+      selector:
+        text:
+    vehicle_id:
+      name: Target Vehicle ID (Optional)
+      description: >
+        AutoLedger Vehicle ID. Leave empty if you have 1 vehicle or want sessions sent to 'Recharges à qualifier'.
+      default: ""
+      selector:
+        text:
+    charger_name:
+      name: Charger Friendly Name
+      description: Name of the charging station (e.g. Wallbox Pulsar, Easee Home).
+      default: "Home Charger"
+      selector:
+        text:
+    location:
+      name: Location
+      description: Charging location tag.
+      default: "home"
+      selector:
+        text:
+
+mode: restart
+max_exceeded: silent
+
+trigger:
+  - platform: state
+    entity_id: !input charger_status_entity
+    from:
+      - "on"
+      - "charging"
+      - "active"
+    for:
+      minutes: 2
+
+variables:
+  server_url: !input autoledger_url
+  api_token: !input autoledger_api_token
+  target_vehicle: !input vehicle_id
+  station_name: !input charger_name
+  loc: !input location
+  energy_entity: !input energy_sensor_entity
+
+action:
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: >
+              {{ states(energy_entity) not in ['unknown', 'unavailable', 'none', ''] and (states(energy_entity) | float(0)) > 0 }}
+        sequence:
+          - action: uri
+            data:
+              url: "{{ server_url.rstrip('/') }}/api/integrations/homeassistant/event"
+              method: POST
+              headers:
+                Authorization: "Bearer {{ api_token }}"
+                Content-Type: "application/json"
+              body: >
+                {
+                  "vehicle_id": {% if target_vehicle | trim != "" %}"{{ target_vehicle | trim }}"{% else %}null{% endif %},
+                  "event_type": "charging_session_end",
+                  "source": "homeassistant_blueprint",
+                  "data": {
+                    "charger_name": "{{ station_name }}",
+                    "energy_kwh": {{ states(energy_entity) | float(0) }},
+                    "location": "{{ loc }}",
+                    "end_time": "{{ now().isoformat() }}"
+                  }
+                }

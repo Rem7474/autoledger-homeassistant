@@ -26,13 +26,15 @@ from .const import (
     ATTR_LAST_SUCCESSFUL_SYNC,
     ATTR_PENDING_EVENTS_COUNT,
     ATTR_SESSION_START_TIME,
+    CONF_CHARGER_NAME,
+    CONF_CHARGERS,
     CONF_VEHICLE_NAME,
     CONF_VEHICLES,
     DOMAIN,
     STATE_COOLING_DOWN,
 )
 from .coordinator import AutoLedgerDataUpdateCoordinator
-from .session_tracker import AutoLedgerSessionTracker
+from .session_tracker import AutoLedgerChargerTracker
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -49,21 +51,24 @@ async def async_setup_entry(
         else hass.data[DOMAIN][entry.entry_id]
     )
     coordinator: AutoLedgerDataUpdateCoordinator = data["coordinator"]
-    trackers: dict[str, AutoLedgerSessionTracker] = data["trackers"]
+    trackers: dict[str, AutoLedgerChargerTracker] = data["trackers"]
 
     configured_vehicles: dict[str, Any] = entry.options.get(CONF_VEHICLES, {})
+    configured_chargers: dict[str, Any] = entry.options.get(CONF_CHARGERS, {})
     entities: list[SensorEntity] = []
 
+    # 1. Sensors per vehicle
     for vehicle_id, vehicle_conf in configured_vehicles.items():
         v_name = vehicle_conf.get(CONF_VEHICLE_NAME, f"Vehicle {vehicle_id}")
-        tracker = trackers.get(vehicle_id)
 
-        # Retrieve vehicle info from coordinator if available
-        vehicle_meta = coordinator.data.get("vehicles", {}).get(vehicle_id, {})
+        # Retrieve vehicle metadata from coordinator
+        vehicle_meta = (
+            coordinator.data.get("vehicles", {}).get(vehicle_id, {}) if coordinator.data else {}
+        )
         make = vehicle_meta.get("make")
         model = vehicle_meta.get("model")
 
-        # 1. Last charge cost sensor
+        # Vehicle last charge cost
         entities.append(
             AutoLedgerLastChargeCostSensor(
                 coordinator=coordinator,
@@ -75,7 +80,7 @@ async def async_setup_entry(
             )
         )
 
-        # 2. Cost per 100km sensor
+        # Vehicle cost per 100km
         entities.append(
             AutoLedgerCostPer100KmSensor(
                 coordinator=coordinator,
@@ -87,30 +92,69 @@ async def async_setup_entry(
             )
         )
 
-        # 3. Sync status sensor
-        if tracker:
+        # Backward compatibility for legacy tracker directly attached to vehicle
+        if vehicle_id in trackers and vehicle_id not in configured_chargers:
+            v_tracker = trackers[vehicle_id]
             entities.append(
-                AutoLedgerSyncStatusSensor(
+                AutoLedgerChargerChargingStateSensor(
                     entry=entry,
-                    tracker=tracker,
-                    vehicle_id=vehicle_id,
-                    vehicle_name=v_name,
-                    make=make,
-                    model=model,
+                    tracker=v_tracker,
+                    charger_id=vehicle_id,
+                    charger_name=v_name,
+                    device_info=_get_vehicle_device_info(entry, vehicle_id, v_name, make, model),
+                )
+            )
+            entities.append(
+                AutoLedgerChargerSyncStatusSensor(
+                    entry=entry,
+                    tracker=v_tracker,
+                    charger_id=vehicle_id,
+                    charger_name=v_name,
+                    device_info=_get_vehicle_device_info(entry, vehicle_id, v_name, make, model),
                 )
             )
 
-            # 4. Charging state sensor
-            entities.append(
-                AutoLedgerChargingStateSensor(
-                    entry=entry,
-                    tracker=tracker,
-                    vehicle_id=vehicle_id,
-                    vehicle_name=v_name,
-                    make=make,
-                    model=model,
-                )
+    # 2. Sensors per charging station
+    for charger_id, charger_conf in configured_chargers.items():
+        c_name = charger_conf.get(CONF_CHARGER_NAME, f"Charger {charger_id}")
+        tracker = trackers.get(charger_id)
+        if not tracker:
+            continue
+
+        c_device_info = _get_charger_device_info(entry, charger_id, c_name)
+
+        # Charger charging state sensor
+        entities.append(
+            AutoLedgerChargerChargingStateSensor(
+                entry=entry,
+                tracker=tracker,
+                charger_id=charger_id,
+                charger_name=c_name,
+                device_info=c_device_info,
             )
+        )
+
+        # Charger last energy kWh sensor
+        entities.append(
+            AutoLedgerChargerLastEnergySensor(
+                entry=entry,
+                tracker=tracker,
+                charger_id=charger_id,
+                charger_name=c_name,
+                device_info=c_device_info,
+            )
+        )
+
+        # Charger sync status sensor
+        entities.append(
+            AutoLedgerChargerSyncStatusSensor(
+                entry=entry,
+                tracker=tracker,
+                charger_id=charger_id,
+                charger_name=c_name,
+                device_info=c_device_info,
+            )
+        )
 
     async_add_entities(entities)
 
@@ -128,7 +172,20 @@ def _get_vehicle_device_info(
         name=vehicle_name,
         manufacturer=make or "AutoLedger",
         model=model or "Vehicle",
-        via_device=(DOMAIN, entry.entry_id),
+    )
+
+
+def _get_charger_device_info(
+    entry: ConfigEntry,
+    charger_id: str,
+    charger_name: str,
+) -> DeviceInfo:
+    """Return device info for a charging station."""
+    return DeviceInfo(
+        identifiers={(DOMAIN, f"{entry.entry_id}_{charger_id}")},
+        name=charger_name,
+        manufacturer="AutoLedger",
+        model="Charging Station",
     )
 
 
@@ -244,28 +301,139 @@ class AutoLedgerCostPer100KmSensor(
         return None
 
 
-class AutoLedgerSyncStatusSensor(SensorEntity):
-    """Sensor displaying AutoLedger synchronization state."""
+class AutoLedgerChargerChargingStateSensor(SensorEntity):
+    """Sensor displaying real-time charging and solar debounce state for a charger."""
+
+    _attr_icon = "mdi:ev-station"
+
+    def __init__(
+        self,
+        entry: ConfigEntry,
+        tracker: AutoLedgerChargerTracker,
+        charger_id: str | None = None,
+        charger_name: str | None = None,
+        device_info: DeviceInfo | None = None,
+        vehicle_id: str | None = None,
+        vehicle_name: str | None = None,
+        make: str | None = None,
+        model: str | None = None,
+    ) -> None:
+        """Initialize the charging state sensor."""
+        self._entry = entry
+        self._tracker = tracker
+        self._charger_id = charger_id or vehicle_id or "charger"
+        self._charger_name = charger_name or vehicle_name or self._charger_id
+        self._attr_name = f"{self._charger_name} Charging State"
+        self._attr_unique_id = f"{entry.entry_id}_{self._charger_id}_charging_state"
+        self._attr_device_info = device_info or _get_charger_device_info(
+            entry, self._charger_id, self._charger_name
+        )
+        self._unsub_listener = None
+
+    async def async_added_to_hass(self) -> None:
+        """Register tracker callback when added to hass."""
+        self._unsub_listener = self._tracker.register_listener(self._handle_tracker_update)
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Unregister tracker callback."""
+        if self._unsub_listener:
+            self._unsub_listener()
+            self._unsub_listener = None
+
+    @callback
+    def _handle_tracker_update(self) -> None:
+        """Handle status update from tracker."""
+        self.async_write_ha_state()
+
+    @property
+    def native_value(self) -> str:
+        """Return state: idle, charging, cooling_down."""
+        return self._tracker.state
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return charging state attributes."""
+        return {
+            ATTR_SESSION_START_TIME: self._tracker.session_start_time,
+            ATTR_DEBOUNCE_ACTIVE: self._tracker.state == STATE_COOLING_DOWN,
+            ATTR_ENERGY_START_KWH: self._tracker.energy_start,
+        }
+
+
+class AutoLedgerChargerLastEnergySensor(SensorEntity):
+    """Sensor displaying energy delivered during the last charging session for a charger."""
+
+    _attr_icon = "mdi:lightning-bolt"
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_native_unit_of_measurement = "kWh"
+
+    def __init__(
+        self,
+        entry: ConfigEntry,
+        tracker: AutoLedgerChargerTracker,
+        charger_id: str,
+        charger_name: str,
+        device_info: DeviceInfo | None = None,
+    ) -> None:
+        """Initialize the last energy sensor."""
+        self._entry = entry
+        self._tracker = tracker
+        self._charger_id = charger_id
+        self._charger_name = charger_name
+        self._attr_name = f"{charger_name} Last Energy"
+        self._attr_unique_id = f"{entry.entry_id}_{charger_id}_last_energy_kwh"
+        self._attr_device_info = device_info or _get_charger_device_info(
+            entry, charger_id, charger_name
+        )
+        self._unsub_listener = None
+
+    async def async_added_to_hass(self) -> None:
+        """Register tracker callback when added to hass."""
+        self._unsub_listener = self._tracker.register_listener(self._handle_tracker_update)
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Unregister tracker callback."""
+        if self._unsub_listener:
+            self._unsub_listener()
+            self._unsub_listener = None
+
+    @callback
+    def _handle_tracker_update(self) -> None:
+        """Handle status update from tracker."""
+        self.async_write_ha_state()
+
+    @property
+    def native_value(self) -> float | None:
+        """Return energy added in last session in kWh."""
+        return self._tracker.last_energy_kwh
+
+
+class AutoLedgerChargerSyncStatusSensor(SensorEntity):
+    """Sensor displaying AutoLedger synchronization state for a charger."""
 
     _attr_icon = "mdi:sync"
 
     def __init__(
         self,
         entry: ConfigEntry,
-        tracker: AutoLedgerSessionTracker,
-        vehicle_id: str,
-        vehicle_name: str,
+        tracker: AutoLedgerChargerTracker,
+        charger_id: str | None = None,
+        charger_name: str | None = None,
+        device_info: DeviceInfo | None = None,
+        vehicle_id: str | None = None,
+        vehicle_name: str | None = None,
         make: str | None = None,
         model: str | None = None,
     ) -> None:
         """Initialize the sync status sensor."""
         self._entry = entry
         self._tracker = tracker
-        self._vehicle_id = vehicle_id
-        self._attr_name = f"{vehicle_name} Sync Status"
-        self._attr_unique_id = f"{entry.entry_id}_{vehicle_id}_sync_status"
-        self._attr_device_info = _get_vehicle_device_info(
-            entry, vehicle_id, vehicle_name, make, model
+        self._charger_id = charger_id or vehicle_id or "charger"
+        self._charger_name = charger_name or vehicle_name or self._charger_id
+        self._attr_name = f"{self._charger_name} Sync Status"
+        self._attr_unique_id = f"{entry.entry_id}_{self._charger_id}_sync_status"
+        self._attr_device_info = device_info or _get_charger_device_info(
+            entry, self._charger_id, self._charger_name
         )
         self._unsub_listener = None
 
@@ -299,56 +467,6 @@ class AutoLedgerSyncStatusSensor(SensorEntity):
         }
 
 
-class AutoLedgerChargingStateSensor(SensorEntity):
-    """Sensor displaying real-time charging and solar debounce state."""
-
-    _attr_icon = "mdi:ev-station"
-
-    def __init__(
-        self,
-        entry: ConfigEntry,
-        tracker: AutoLedgerSessionTracker,
-        vehicle_id: str,
-        vehicle_name: str,
-        make: str | None = None,
-        model: str | None = None,
-    ) -> None:
-        """Initialize the charging state sensor."""
-        self._entry = entry
-        self._tracker = tracker
-        self._vehicle_id = vehicle_id
-        self._attr_name = f"{vehicle_name} Charging State"
-        self._attr_unique_id = f"{entry.entry_id}_{vehicle_id}_charging_state"
-        self._attr_device_info = _get_vehicle_device_info(
-            entry, vehicle_id, vehicle_name, make, model
-        )
-        self._unsub_listener = None
-
-    async def async_added_to_hass(self) -> None:
-        """Register tracker callback when added to hass."""
-        self._unsub_listener = self._tracker.register_listener(self._handle_tracker_update)
-
-    async def async_will_remove_from_hass(self) -> None:
-        """Unregister tracker callback."""
-        if self._unsub_listener:
-            self._unsub_listener()
-            self._unsub_listener = None
-
-    @callback
-    def _handle_tracker_update(self) -> None:
-        """Handle status update from tracker."""
-        self.async_write_ha_state()
-
-    @property
-    def native_value(self) -> str:
-        """Return state: idle, charging, cooling_down."""
-        return self._tracker.state
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Return charging state attributes."""
-        return {
-            ATTR_SESSION_START_TIME: self._tracker.session_start_time,
-            ATTR_DEBOUNCE_ACTIVE: self._tracker.state == STATE_COOLING_DOWN,
-            ATTR_ENERGY_START_KWH: self._tracker.energy_start,
-        }
+# Aliases for backwards compatibility
+AutoLedgerChargingStateSensor = AutoLedgerChargerChargingStateSensor
+AutoLedgerSyncStatusSensor = AutoLedgerChargerSyncStatusSensor

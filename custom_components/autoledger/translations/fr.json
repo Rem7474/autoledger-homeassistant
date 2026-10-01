@@ -23,15 +23,22 @@
   "options": {
     "step": {
       "init": {
+        "title": "Paramètres AutoLedger",
+        "menu_options": {
+          "manage_vehicles": "🚗 Gérer les Véhicules",
+          "manage_chargers": "🔌 Gérer les Bornes de Recharge"
+        }
+      },
+      "manage_vehicles": {
         "title": "Gestion des Véhicules AutoLedger",
         "menu_options": {
-          "add_vehicle": "Ajouter un mapping de véhicule",
+          "add_vehicle": "Ajouter un véhicule",
           "edit_vehicle": "Modifier un véhicule existant",
-          "remove_vehicle": "Retirer un véhicule"
+          "remove_vehicle": "Supprimer un véhicule"
         }
       },
       "add_vehicle": {
-        "title": "Associer un Véhicule",
+        "title": "Ajouter un Véhicule",
         "description": "Sélectionnez un véhicule AutoLedger et l'appareil Home Assistant correspondant pour pré-remplir les capteurs.",
         "data": {
           "vehicle_id": "Véhicule AutoLedger",
@@ -40,7 +47,7 @@
       },
       "edit_vehicle": {
         "title": "Modifier un Véhicule",
-        "description": "Sélectionnez un véhicule pour mettre à jour la configuration de télématique et d'énergie.",
+        "description": "Sélectionnez un véhicule pour modifier sa télématique.",
         "data": {
           "vehicle_id": "Véhicule"
         }
@@ -53,18 +60,81 @@
         }
       },
       "vehicle_mapping": {
-        "title": "Configuration des Capteurs",
-        "description": "Associez les capteurs de télématique et de borne de recharge Home Assistant à ce véhicule AutoLedger.",
+        "title": "Configuration des Capteurs Véhicule",
+        "description": "Associez les capteurs de télématique Home Assistant à ce véhicule AutoLedger.",
         "data": {
-          "charging_status_entity": "Capteur d'état de charge (Requis)",
           "battery_soc_entity": "Niveau de batterie SoC (%)",
           "odometer_entity": "Odomètre du véhicule (km)",
-          "energy_meter_entity": "Capteur d'énergie de charge (kWh)",
-          "energy_meter_type": "Mode du compteur d'énergie",
-          "location_entity": "Capteur d'emplacement / Tracker",
-          "charging_location": "Emplacement par défaut (ex: home)",
-          "debounce_seconds": "Temporisation anti-rebond solaire (secondes)"
+          "charging_status_entity": "Capteur d'état de charge interne du véhicule (Optionnel)"
         }
+      },
+      "manage_chargers": {
+        "title": "Gestion des Bornes de Recharge",
+        "menu_options": {
+          "add_charger": "Ajouter une borne",
+          "edit_charger": "Modifier une borne existante",
+          "remove_charger": "Supprimer une borne"
+        }
+      },
+      "add_charger": {
+        "title": "Ajouter une Borne de Recharge",
+        "description": "Configurez une borne de recharge résidentielle ou un sous-compteur."
+      },
+      "edit_charger": {
+        "title": "Modifier une Borne de Recharge",
+        "description": "Sélectionnez une borne de recharge à modifier.",
+        "data": {
+          "charger_id": "Borne de recharge"
+        }
+      },
+      "remove_charger": {
+        "title": "Supprimer une Borne de Recharge",
+        "description": "Sélectionnez la borne de recharge à supprimer.",
+        "data": {
+          "charger_id": "Borne à retirer"
+        }
+      },
+      "charger_step1": {
+        "title": "Configuration de la Borne",
+        "description": "Configurez le nom, le capteur d'activation, le compteur d'énergie, l'anti-rebond et le tag de lieu de la borne.",
+        "data": {
+          "charger_name": "Nom de la borne",
+          "charging_status_entity": "Capteur d'activation / Puissance / Switch",
+          "energy_meter_entity": "Compteur d'énergie (kWh)",
+          "energy_meter_type": "Mode du compteur d'énergie",
+          "debounce_seconds": "Temporisation anti-rebond solaire (secondes)",
+          "charging_location": "Lieu de charge (tag)"
+        }
+      },
+      "charger_step2": {
+        "title": "Mode d'Attribution du Véhicule",
+        "description": "Définissez comment attribuer le véhicule lors de la fin d'une recharge sur cette borne.",
+        "data": {
+          "assignment_mode": "Stratégie d'attribution",
+          "linked_vehicle_id": "Véhicule lié fixe",
+          "vehicle_select_entity": "Entité de sélection dynamique"
+        }
+      }
+    },
+    "error": {
+      "invalid_name": "Veuillez saisir un nom valide pour la borne.",
+      "select_vehicle": "Veuillez sélectionner un véhicule pour l'attribution fixe.",
+      "select_entity": "Veuillez sélectionner une entité pour la sélection dynamique."
+    }
+  },
+  "selector": {
+    "assignment_mode": {
+      "options": {
+        "fixed": "Véhicule fixe lié",
+        "input_select": "Sélecteur dynamique (input_select)",
+        "correlation": "Détection automatique (corrélation)",
+        "unassigned": "Multi-véhicules / Borne aveugle (non attribué)"
+      }
+    },
+    "energy_meter_type": {
+      "options": {
+        "total_increasing": "Compteur cumulé (kWh croissants)",
+        "session": "Énergie par session (remise à zéro par charge)"
       }
     }
   },

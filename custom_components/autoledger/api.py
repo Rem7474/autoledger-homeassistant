@@ -198,9 +198,9 @@ class AutoLedgerApiClient:
             )
             return res if isinstance(res, dict) else {"status": "success"}
         except AutoLedgerApiError as err:
-            if err.status_code == 404:
+            vehicle_id = event_data.get("vehicle_id")
+            if err.status_code == 404 and vehicle_id is not None:
                 # Fallback to POST /api/vehicles/{vehicleId}/charges
-                vehicle_id = event_data.get("vehicle_id")
                 data = event_data.get("data", {})
                 charge_payload = {
                     "odometer_km": data.get("odometer_km"),
@@ -227,7 +227,7 @@ class AutoLedgerApiClient:
 
     async def async_submit_charge(
         self,
-        vehicle_id: str,
+        vehicle_id: str | None,
         kwh: float,
         cost: float | None = None,
         odometer_km: float | None = None,
