@@ -215,12 +215,23 @@ if "homeassistant" not in sys.modules:
             def _abort_if_unique_id_configured(self):
                 pass
 
-            def async_show_form(self, step_id, data_schema=None, errors=None):
+            def _get_reconfigure_entry(self):
+                return getattr(self, "_reconfigure_entry", None)
+
+            def async_update_reload_and_abort(self, entry, data_updates=None):
+                if entry and data_updates:
+                    entry.data.update(data_updates)
+                return {"type": "abort", "reason": "reconfigure_successful"}
+
+            def async_show_form(
+                self, step_id, data_schema=None, errors=None, description_placeholders=None
+            ):
                 return {
                     "type": "form",
                     "step_id": step_id,
                     "data_schema": data_schema,
                     "errors": errors or {},
+                    "description_placeholders": description_placeholders or {},
                 }
 
             def async_create_entry(self, title, data):
@@ -230,15 +241,23 @@ if "homeassistant" not in sys.modules:
                 return {"type": "abort", "reason": reason}
 
         class OptionsFlow:
-            def async_show_menu(self, step_id, menu_options):
-                return {"type": "menu", "step_id": step_id, "menu_options": menu_options}
+            def async_show_menu(self, step_id, menu_options, description_placeholders=None):
+                return {
+                    "type": "menu",
+                    "step_id": step_id,
+                    "menu_options": menu_options,
+                    "description_placeholders": description_placeholders or {},
+                }
 
-            def async_show_form(self, step_id, data_schema=None, errors=None):
+            def async_show_form(
+                self, step_id, data_schema=None, errors=None, description_placeholders=None
+            ):
                 return {
                     "type": "form",
                     "step_id": step_id,
                     "data_schema": data_schema,
                     "errors": errors or {},
+                    "description_placeholders": description_placeholders or {},
                 }
 
             def async_create_entry(self, title, data):
