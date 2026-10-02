@@ -20,6 +20,8 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+SYNC_RETRY_SECONDS = 300
+
 
 def get_entity_odometer_km(hass: HomeAssistant, entity_id: str | None) -> float | None:
     """Extract and convert odometer reading to kilometers."""
@@ -63,6 +65,7 @@ class AutoLedgerOdometerTracker:
         self._last_synced_odometer: dict[str, float] = {}
         self._pending_odometer: dict[str, float] = {}
         self._debounce_timers: dict[str, Callable[[], None]] = {}
+        self._retry_timers: dict[str, Callable[[], None]] = {}
         self._unsub_trackers: list[Callable[[], None]] = []
 
     def set_last_synced_odometer(self, vehicle_id: str, km: float | None) -> None:
@@ -109,6 +112,9 @@ class AutoLedgerOdometerTracker:
         for cancel in self._debounce_timers.values():
             cancel()
         self._debounce_timers.clear()
+        for cancel in self._retry_timers.values():
+            cancel()
+        self._retry_timers.clear()
 
         for unsub in self._unsub_trackers:
             unsub()
@@ -154,9 +160,9 @@ class AutoLedgerOdometerTracker:
             self.debounce_seconds,
         )
 
-        def _on_debounce_expired(_now: Any, vid: str = target_vid) -> None:
+        async def _on_debounce_expired(_now: Any, vid: str = target_vid) -> None:
             self._debounce_timers.pop(vid, None)
-            self.hass.async_create_task(self._async_handle_debounce_expired(vid))
+            await self._async_handle_debounce_expired(vid)
 
         self._debounce_timers[target_vid] = async_call_later(
             self.hass,
@@ -213,12 +219,38 @@ class AutoLedgerOdometerTracker:
             )
             self._last_synced_odometer[vehicle_id] = odometer_km
             self._pending_odometer.pop(vehicle_id, None)
+            cancel = self._retry_timers.pop(vehicle_id, None)
+            if cancel:
+                cancel()
             return True
         except Exception as err:
             _LOGGER.warning(
-                "Failed to sync odometer for vehicle %s (%.1f km): %s",
+                "Failed to sync odometer for vehicle %s (%.1f km), retrying in %ss: %s",
                 vehicle_id,
                 odometer_km,
+                SYNC_RETRY_SECONDS,
                 err,
             )
+            self._schedule_retry(vehicle_id)
             return False
+
+    def _schedule_retry(self, vehicle_id: str) -> None:
+        """The sensor may not change again: a failed sync is tried again on its own."""
+        if vehicle_id in self._retry_timers:
+            return
+
+        async def _on_retry(_now: Any) -> None:
+            self._retry_timers.pop(vehicle_id, None)
+            await self._async_retry(vehicle_id)
+
+        self._retry_timers[vehicle_id] = async_call_later(
+            self.hass, float(SYNC_RETRY_SECONDS), _on_retry
+        )
+
+    async def _async_retry(self, vehicle_id: str) -> None:
+        vconf = self.vehicles_config.get(vehicle_id, {})
+        km = get_entity_odometer_km(self.hass, vconf.get(CONF_ODOMETER_ENTITY))
+        if km is not None and km > self._last_synced_odometer.get(vehicle_id, 0.0):
+            await self.async_sync_vehicle(vehicle_id, km, reason="retry")
+            if self.coordinator:
+                await self.coordinator.async_request_refresh()

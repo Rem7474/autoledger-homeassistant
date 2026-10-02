@@ -441,7 +441,11 @@ class AutoLedgerChargerTracker:
         energy_added_kwh: float = 0.0
         if self.energy_meter_type == ENERGY_METER_TYPE_TOTAL_INCREASING:
             if current_energy is not None and self.energy_start is not None:
-                energy_added_kwh = max(0.0, current_energy - self.energy_start)
+                if current_energy < self.energy_start:
+                    # A per-session counter reset to zero after the session began
+                    energy_added_kwh = current_energy
+                else:
+                    energy_added_kwh = current_energy - self.energy_start
             elif current_energy is not None:
                 energy_added_kwh = 0.0
         elif self.energy_meter_type == ENERGY_METER_TYPE_SESSION:

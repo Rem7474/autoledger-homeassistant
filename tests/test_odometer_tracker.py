@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -237,11 +238,9 @@ async def test_odometer_tracker_trip_end_debounce(mock_hass, mock_client):
             "sensor.car_odometer", "50025.0", attributes={"unit_of_measurement": "km"}
         )
         # Simulate timer firing
-        scheduled_timer_callback(None)
-        # The callback spawns an async task on mock_hass
-        assert len(mock_hass._created_tasks) == 1
-        # Await the created task
-        await mock_hass._created_tasks[0]
+        # Home Assistant awaits a coroutine function itself; a plain function would run in a thread
+        assert inspect.iscoroutinefunction(scheduled_timer_callback)
+        await scheduled_timer_callback(None)
 
         # Exactly 1 single API call made with the final trip odometer!
         mock_client.async_update_odometer.assert_awaited_once_with(
@@ -250,3 +249,29 @@ async def test_odometer_tracker_trip_end_debounce(mock_hass, mock_client):
         )
         assert tracker._last_synced_odometer["veh-1"] == 50025.0
         mock_coordinator.async_request_refresh.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_failed_initial_sync_is_retried_without_a_sensor_change(mock_hass, mock_client):
+    vehicles_config = {"veh-1": {CONF_ODOMETER_ENTITY: "sensor.car_odometer"}}
+    mock_hass.states.get.return_value = State(
+        "sensor.car_odometer", "37531.5", attributes={"unit_of_measurement": "km"}
+    )
+    mock_client.async_update_odometer.side_effect = [RuntimeError("network not ready"), {}]
+
+    with (
+        patch("custom_components.autoledger.odometer_tracker.async_track_state_change_event"),
+        patch("custom_components.autoledger.odometer_tracker.async_call_later") as call_later,
+    ):
+        tracker = AutoLedgerOdometerTracker(
+            hass=mock_hass, client=mock_client, vehicles_config=vehicles_config
+        )
+        await tracker.async_setup()
+
+        assert "veh-1" not in tracker._last_synced_odometer
+        call_later.assert_called_once()
+
+        await tracker._async_retry("veh-1")
+
+    assert tracker._last_synced_odometer["veh-1"] == 37531.5
+    assert mock_client.async_update_odometer.await_count == 2
