@@ -153,92 +153,29 @@ class AutoLedgerApiClient:
             _LOGGER.exception("Unexpected error while communicating with AutoLedger: %s", err)
             raise AutoLedgerApiError(f"Unexpected error: {err}") from err
 
-    async def _get_first_available(self, *endpoints: str) -> Any:
-        """GET the first endpoint the server knows, moving to the next one only on HTTP 404.
-
-        Recent servers serve the integration routes (/api/integrations/homeassistant/...), which are the
-        only ones an API token opens; older servers only have the general /api routes.
-        """
-        for endpoint in endpoints[:-1]:
-            try:
-                return await self._request("GET", endpoint)
-            except AutoLedgerApiError as err:
-                if err.status_code != 404:
-                    raise
-        return await self._request("GET", endpoints[-1])
-
     async def async_test_connection(self) -> bool:
         """Test API connectivity and credentials with an authenticated call."""
-        await self._get_first_available(f"{INTEGRATION_API}/vehicles", "/api/vehicles")
+        await self._request("GET", f"{INTEGRATION_API}/vehicles")
         return True
 
     async def async_get_vehicles(self) -> list[dict[str, Any]]:
         """Fetch list of all vehicles from AutoLedger."""
-        res = await self._get_first_available(f"{INTEGRATION_API}/vehicles", "/api/vehicles")
+        res = await self._request("GET", f"{INTEGRATION_API}/vehicles")
         if isinstance(res, list):
             return res
-        if isinstance(res, dict) and "vehicles" in res and isinstance(res["vehicles"], list):
+        if isinstance(res, dict) and isinstance(res.get("vehicles"), list):
             return res["vehicles"]
         return []
 
     async def async_get_vehicle_metrics(self, vehicle_id: str) -> dict[str, Any]:
         """Fetch latest metrics and financial summary for a vehicle."""
-        try:
-            res = await self._get_first_available(
-                f"{INTEGRATION_API}/vehicles/{vehicle_id}/metrics",
-                f"/api/vehicles/{vehicle_id}/metrics",
-            )
-            if isinstance(res, dict):
-                return res
-        except AutoLedgerApiError as err:
-            if err.status_code != 404:
-                raise
-
-        # Fallback to vehicle endpoint
-        res = await self._get_first_available(
-            f"{INTEGRATION_API}/vehicles/{vehicle_id}", f"/api/vehicles/{vehicle_id}"
-        )
-        if isinstance(res, dict):
-            # Extract nested metrics if present or return vehicle data
-            return res.get("metrics", res)
-        return {}
+        res = await self._request("GET", f"{INTEGRATION_API}/vehicles/{vehicle_id}/metrics")
+        return res if isinstance(res, dict) else {}
 
     async def async_post_event(self, event_data: dict[str, Any]) -> dict[str, Any]:
-        """Post a charging event to AutoLedger with automatic fallback."""
-        try:
-            res = await self._request(
-                "POST",
-                f"{INTEGRATION_API}/event",
-                json=event_data,
-            )
-            return res if isinstance(res, dict) else {"status": "success"}
-        except AutoLedgerApiError as err:
-            vehicle_id = event_data.get("vehicle_id")
-            if err.status_code == 404 and vehicle_id is not None:
-                # Fallback to POST /api/vehicles/{vehicleId}/charges
-                data = event_data.get("data", {})
-                charge_payload = {
-                    "odometer_km": data.get("odometer_km"),
-                    "kwh": data.get("energy_added_kwh"),
-                    "soc_start": data.get("soc_start"),
-                    "soc_end": data.get("soc_end"),
-                    "start_time": data.get("start_time"),
-                    "end_time": data.get("end_time"),
-                    "location": data.get("location"),
-                    "total_cost": data.get("cost"),
-                }
-                _LOGGER.info(
-                    "Endpoint /api/integrations/homeassistant/event not found. "
-                    "Falling back to /api/vehicles/%s/charges",
-                    vehicle_id,
-                )
-                res = await self._request(
-                    "POST",
-                    f"/api/vehicles/{vehicle_id}/charges",
-                    json=charge_payload,
-                )
-                return res if isinstance(res, dict) else {"status": "success"}
-            raise
+        """Post an event to the AutoLedger integration endpoint."""
+        res = await self._request("POST", f"{INTEGRATION_API}/event", json=event_data)
+        return res if isinstance(res, dict) else {"status": "success"}
 
     async def async_submit_charge(
         self,
@@ -250,7 +187,7 @@ class AutoLedgerApiClient:
         soc_end: int | None = None,
         start_time: str | None = None,
         end_time: str | None = None,
-        location: str = "home",
+        location: str | None = None,
     ) -> dict[str, Any]:
         """Directly submit a charging session."""
         charge_payload = {
@@ -287,30 +224,4 @@ class AutoLedgerApiClient:
                 "odometer_km": round(odometer_km, 1),
             },
         }
-        try:
-            res = await self._request(
-                "POST",
-                f"{INTEGRATION_API}/event",
-                json=payload,
-            )
-            return res if isinstance(res, dict) else {"status": "success"}
-        except AutoLedgerApiError as err:
-            # Fallback to odometer-checkpoints if /api/integrations/homeassistant/event is 404
-            if err.status_code == 404:
-                _LOGGER.info(
-                    "Endpoint /api/integrations/homeassistant/event returned 404. "
-                    "Falling back to /api/vehicles/%s/odometer-checkpoints",
-                    vehicle_id,
-                )
-                checkpoint_payload = {
-                    "date": timestamp or dt_util.utcnow().isoformat(),
-                    "odometer": round(odometer_km, 1),
-                    "notes": "Home Assistant sync",
-                }
-                res = await self._request(
-                    "POST",
-                    f"/api/vehicles/{vehicle_id}/odometer-checkpoints",
-                    json=checkpoint_payload,
-                )
-                return res if isinstance(res, dict) else {"status": "success"}
-            raise
+        return await self.async_post_event(payload)

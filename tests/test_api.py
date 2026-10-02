@@ -71,16 +71,17 @@ async def test_connection_checks_the_token_on_an_integration_route(mock_session)
 
 
 @pytest.mark.asyncio
-async def test_connection_fallback_to_vehicles(mock_session):
-    """An older server without the integration routes is tested on /api/vehicles."""
-    resp_404 = MockClientResponse(status=404, text_data="Not Found")
-    resp_200 = MockClientResponse(status=200, json_data=[])
-    mock_session.request.side_effect = [resp_404, resp_200]
-
+async def test_connection_404_is_not_masked(mock_session):
+    """A server without the integration routes is reported as such, no other route is tried."""
+    mock_session.request.return_value = MockClientResponse(status=404, text_data="Not Found")
     client = AutoLedgerApiClient("http://autoledger.local:8080/", "test_key", mock_session)
-    result = await client.async_test_connection()
-    assert result is True
-    assert called_urls(mock_session)[-1] == "http://autoledger.local:8080/api/vehicles"
+
+    with pytest.raises(AutoLedgerApiError) as exc:
+        await client.async_test_connection()
+    assert exc.value.status_code == 404
+    assert called_urls(mock_session) == [
+        "http://autoledger.local:8080/api/integrations/homeassistant/vehicles"
+    ]
 
 
 @pytest.mark.asyncio
@@ -146,16 +147,13 @@ async def test_get_vehicles_wrong_token_does_not_fall_back(mock_session):
 
 
 @pytest.mark.asyncio
-async def test_get_vehicles_older_server(mock_session):
-    """A server without the integration routes is read through /api/vehicles."""
-    mock_session.request.side_effect = [
-        MockClientResponse(status=404, text_data="Not Found"),
-        MockClientResponse(status=200, json_data=[{"id": "v-1"}]),
-    ]
+async def test_get_vehicles_404_raises(mock_session):
+    mock_session.request.return_value = MockClientResponse(status=404, text_data="Not Found")
     client = AutoLedgerApiClient("http://autoledger.local:8080", "test_key", mock_session)
 
-    assert await client.async_get_vehicles() == [{"id": "v-1"}]
-    assert called_urls(mock_session)[-1] == "http://autoledger.local:8080/api/vehicles"
+    with pytest.raises(AutoLedgerApiError):
+        await client.async_get_vehicles()
+    assert mock_session.request.call_count == 1
 
 
 @pytest.mark.asyncio
@@ -181,23 +179,13 @@ async def test_get_vehicle_metrics(mock_session):
 
 
 @pytest.mark.asyncio
-async def test_get_vehicle_metrics_older_server(mock_session):
-    """Without any metrics route, the vehicle itself is read, integration route first."""
-    not_found = MockClientResponse(status=404, text_data="Not Found")
-    mock_session.request.side_effect = [
-        not_found,
-        not_found,
-        MockClientResponse(status=200, json_data={"id": "v-123", "currency": "EUR"}),
-    ]
+async def test_get_vehicle_metrics_404_raises(mock_session):
+    mock_session.request.return_value = MockClientResponse(status=404, text_data="Not Found")
     client = AutoLedgerApiClient("http://autoledger.local:8080", "test_key", mock_session)
 
-    metrics = await client.async_get_vehicle_metrics("v-123")
-    assert metrics["currency"] == "EUR"
-    assert called_urls(mock_session) == [
-        "http://autoledger.local:8080/api/integrations/homeassistant/vehicles/v-123/metrics",
-        "http://autoledger.local:8080/api/vehicles/v-123/metrics",
-        "http://autoledger.local:8080/api/integrations/homeassistant/vehicles/v-123",
-    ]
+    with pytest.raises(AutoLedgerApiError):
+        await client.async_get_vehicle_metrics("v-123")
+    assert mock_session.request.call_count == 1
 
 
 @pytest.mark.asyncio
@@ -225,32 +213,14 @@ async def test_post_event_success(mock_session):
 
 
 @pytest.mark.asyncio
-async def test_post_event_fallback_to_charges(mock_session):
-    """Test fallback to /api/vehicles/{id}/charges when event endpoint returns 404."""
-    resp_404 = MockClientResponse(status=404, text_data="Not Found")
-    resp_200 = MockClientResponse(status=200, json_data={"charge_id": "ch-789"})
-    mock_session.request.side_effect = [resp_404, resp_200]
-
+async def test_post_event_404_raises_without_fallback(mock_session):
+    mock_session.request.return_value = MockClientResponse(status=404, text_data="Not Found")
     client = AutoLedgerApiClient("http://autoledger.local:8080", "test_key", mock_session)
 
-    payload = {
-        "vehicle_id": "v-123",
-        "event_type": "charging_session_end",
-        "source": "homeassistant",
-        "data": {
-            "energy_added_kwh": 30.5,
-            "odometer_km": 18500.0,
-            "soc_start": 20,
-            "soc_end": 80,
-            "location": "home",
-        },
-    }
-
-    res = await client.async_post_event(payload)
-    assert res == {"charge_id": "ch-789"}
-    # Second call should have targeted /api/vehicles/v-123/charges
-    second_call_url = mock_session.request.call_args_list[1][1]["url"]
-    assert second_call_url == "http://autoledger.local:8080/api/vehicles/v-123/charges"
+    with pytest.raises(AutoLedgerApiError) as exc:
+        await client.async_post_event({"vehicle_id": "v-123", "event_type": "charging_session_end"})
+    assert exc.value.status_code == 404
+    assert mock_session.request.call_count == 1
 
 
 @pytest.mark.asyncio
@@ -339,23 +309,10 @@ async def test_update_odometer_success(mock_session):
 
 
 @pytest.mark.asyncio
-async def test_update_odometer_fallback_on_404(mock_session):
-    """Test odometer update falls back to /api/vehicles/{id}/odometer-checkpoints when event endpoint is 404."""
-    resp_404 = MockClientResponse(status=404, text_data="Not Found")
-    resp_fallback = MockClientResponse(status=201, json_data={"id": "cp-1", "odometer": 52300.4})
-    mock_session.request.side_effect = [resp_404, resp_fallback]
-
+async def test_update_odometer_404_raises_without_fallback(mock_session):
+    mock_session.request.return_value = MockClientResponse(status=404, text_data="Not Found")
     client = AutoLedgerApiClient("http://autoledger.local:8080", "test_key", mock_session)
-    res = await client.async_update_odometer("veh-123", 52300.4)
 
-    assert res == {"id": "cp-1", "odometer": 52300.4}
-    assert mock_session.request.call_count == 2
-    assert (
-        mock_session.request.call_args_list[0][1]["url"]
-        == "http://autoledger.local:8080/api/integrations/homeassistant/event"
-    )
-    assert (
-        mock_session.request.call_args_list[1][1]["url"]
-        == "http://autoledger.local:8080/api/vehicles/veh-123/odometer-checkpoints"
-    )
-    assert mock_session.request.call_args_list[1][1]["json"]["odometer"] == 52300.4
+    with pytest.raises(AutoLedgerApiError):
+        await client.async_update_odometer("veh-123", 52300.4)
+    assert mock_session.request.call_count == 1

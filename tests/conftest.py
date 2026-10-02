@@ -87,6 +87,7 @@ if "homeassistant" not in sys.modules:
         ha.helpers.selector = ModuleType("homeassistant.helpers.selector")
         ha.helpers.config_validation = ModuleType("homeassistant.helpers.config_validation")
         ha.helpers.aiohttp_client = ModuleType("homeassistant.helpers.aiohttp_client")
+        ha.helpers.storage = ModuleType("homeassistant.helpers.storage")
         ha.config_entries = ModuleType("homeassistant.config_entries")
         ha.data_entry_flow = ModuleType("homeassistant.data_entry_flow")
         ha.components = ModuleType("homeassistant.components")
@@ -373,6 +374,18 @@ if "homeassistant" not in sys.modules:
 
         ha.helpers.aiohttp_client.async_get_clientsession = async_get_clientsession
 
+        class Store:
+            def __init__(self, hass, version, key):
+                self.data = None
+
+            async def async_load(self):
+                return self.data
+
+            async def async_save(self, data):
+                self.data = data
+
+        ha.helpers.storage.Store = Store
+
         # entity registry
         def er_async_get(hass):
             return MagicMock()
@@ -405,6 +418,7 @@ if "homeassistant" not in sys.modules:
         sys.modules["homeassistant.helpers.selector"] = ha.helpers.selector
         sys.modules["homeassistant.helpers.config_validation"] = ha.helpers.config_validation
         sys.modules["homeassistant.helpers.aiohttp_client"] = ha.helpers.aiohttp_client
+        sys.modules["homeassistant.helpers.storage"] = ha.helpers.storage
         sys.modules["homeassistant.config_entries"] = ha.config_entries
         sys.modules["homeassistant.data_entry_flow"] = ha.data_entry_flow
         sys.modules["homeassistant.components"] = ha.components

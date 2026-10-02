@@ -93,7 +93,6 @@ submit_charge:
       name: Location
       description: Charging location tag (e.g., home, work, public).
       required: false
-      default: "home"
       example: "home"
       selector:
         text:

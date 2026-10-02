@@ -10,7 +10,7 @@ from homeassistant.core import CALLBACK_TYPE, Event, EventStateChangedData, Home
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 from homeassistant.util import dt as dt_util
 
-from .api import AutoLedgerApiClient
+from .api import AutoLedgerApiClient, AutoLedgerApiError
 from .const import (
     ASSIGNMENT_MODE_CORRELATION,
     ASSIGNMENT_MODE_FIXED,
@@ -55,6 +55,9 @@ CHARGING_POSITIVE_STATES = {
 # States of an entity that is offline or not reporting yet: they tell nothing about charging
 UNKNOWN_STATES = {"unavailable", "unknown"}
 
+RETRY_DELAY_SECONDS = 300
+MAX_RETRY_QUEUE = 100
+
 CHARGING_NEGATIVE_STATES = {
     "off",
     "idle",
@@ -79,6 +82,7 @@ class AutoLedgerChargerTracker:
         vehicles_config: dict[str, Any] | None = None,
         coordinator: Any | None = None,
         vehicle_id: str | None = None,
+        store: Any | None = None,
         **kwargs: Any,
     ) -> None:
         """Initialize the charger tracker."""
@@ -88,6 +92,7 @@ class AutoLedgerChargerTracker:
         self.config = config or {}
         self.vehicles_config: dict[str, Any] = vehicles_config or {}
         self.coordinator = coordinator
+        self._store = store
 
         # Charger configuration
         self.charger_name: str = config.get(
@@ -146,6 +151,11 @@ class AutoLedgerChargerTracker:
 
         # Debounce timer
         self._debounce_unsub: CALLBACK_TYPE | None = None
+
+        # Events the server could not be reached for, resent later (the server dedupes on event_id)
+        self._retry_queue: list[dict[str, Any]] = []
+        self._retry_unsub: CALLBACK_TYPE | None = None
+        self._flushing = False
 
         # Sync status & metrics
         self.sync_status: str = SYNC_STATUS_OK
@@ -254,6 +264,10 @@ class AutoLedgerChargerTracker:
 
     async def async_setup(self) -> None:
         """Start tracking charger state changes."""
+        await self._async_restore()
+        if self._retry_queue:
+            await self.async_flush_retry_queue()
+
         if not self.charging_status_entity:
             _LOGGER.debug("No charging status entity configured for charger %s", self.charger_id)
             return
@@ -275,6 +289,10 @@ class AutoLedgerChargerTracker:
         if self._debounce_unsub is not None:
             self._debounce_unsub()
             self._debounce_unsub = None
+
+        if self._retry_unsub is not None:
+            self._retry_unsub()
+            self._retry_unsub = None
 
         for unsub in self._unsub_trackers:
             unsub()
@@ -369,6 +387,7 @@ class AutoLedgerChargerTracker:
                 self.charger_id,
                 self.energy_start,
             )
+            await self._async_persist()
             self._notify_listeners()
 
     async def _async_handle_charge_paused_or_stopped(self) -> None:
@@ -391,6 +410,7 @@ class AutoLedgerChargerTracker:
             self.charger_id,
             self.debounce_seconds,
         )
+        await self._async_persist()
         self._notify_listeners()
 
         self._debounce_unsub = async_call_later(
@@ -437,6 +457,7 @@ class AutoLedgerChargerTracker:
             )
             self.state = STATE_IDLE
             self._reset_session_data()
+            await self._async_persist()
             self._notify_listeners()
             return
 
@@ -558,33 +579,176 @@ class AutoLedgerChargerTracker:
         )
 
         self.state = STATE_IDLE
+        self._reset_session_data()
         self.sync_status = SYNC_STATUS_PENDING
-        self.pending_events_count += 1
+        self.pending_events_count = len(self._retry_queue) + 1
+        await self._async_persist()
         self._notify_listeners()
 
-        try:
-            await self.client.async_post_event(payload)
-            self.sync_status = SYNC_STATUS_OK
-            self.last_successful_sync = dt_util.utcnow().isoformat()
-            self.last_error_message = None
-            self.pending_events_count = max(0, self.pending_events_count - 1)
+        if await self._async_send_event(payload):
             _LOGGER.info("Successfully sent charge session to AutoLedger")
-
             if self.coordinator is not None:
                 await self.coordinator.async_request_refresh()
                 if resolved_vehicle_id and odometer_end is not None:
                     odometer_tracker = getattr(self.coordinator, "odometer_tracker", None)
                     if odometer_tracker:
                         odometer_tracker.set_last_synced_odometer(resolved_vehicle_id, odometer_end)
+            await self.async_flush_retry_queue()
 
+        self.pending_events_count = len(self._retry_queue)
+        await self._async_persist()
+        self._notify_listeners()
+
+    async def _async_send_event(self, payload: dict[str, Any]) -> bool:
+        """Post an event; queue it for a later retry when the failure is not the server's verdict."""
+        try:
+            await self.client.async_post_event(payload)
         except Exception as err:
             self.sync_status = SYNC_STATUS_ERROR
             self.last_error_message = str(err)
-            _LOGGER.error("Failed to post charge event to AutoLedger: %s", err)
+            if self._is_retryable(err):
+                _LOGGER.warning("AutoLedger unreachable, charge session queued for retry: %s", err)
+                self._enqueue(payload)
+            else:
+                _LOGGER.error("AutoLedger rejected the charge session, dropping it: %s", err)
+            return False
 
+        self.sync_status = SYNC_STATUS_OK
+        self.last_successful_sync = dt_util.utcnow().isoformat()
+        self.last_error_message = None
+        return True
+
+    @staticmethod
+    def _is_retryable(err: Exception) -> bool:
+        """A request the server answered with a client error will never succeed as is."""
+        if isinstance(err, AutoLedgerApiError) and err.status_code is not None:
+            return err.status_code >= 500 or err.status_code in (408, 429)
+        return True
+
+    def _enqueue(self, payload: dict[str, Any]) -> None:
+        """Keep a payload for retry, once per event_id, bounded to the latest sessions."""
+        event_id = payload.get("event_id")
+        if event_id and any(q.get("event_id") == event_id for q in self._retry_queue):
+            return
+        self._retry_queue.append(payload)
+        del self._retry_queue[:-MAX_RETRY_QUEUE]
+        self._schedule_retry()
+
+    def _schedule_retry(self) -> None:
+        if self._retry_unsub is None and self._retry_queue:
+            self._retry_unsub = async_call_later(
+                self.hass, float(RETRY_DELAY_SECONDS), self._async_retry_tick
+            )
+
+    async def _async_retry_tick(self, _now: Any) -> None:
+        self._retry_unsub = None
+        await self.async_flush_retry_queue()
+        self.pending_events_count = len(self._retry_queue)
+        self._notify_listeners()
+
+    async def async_flush_retry_queue(self) -> None:
+        """Resend queued events in order, stopping at the first failure."""
+        if self._flushing:
+            return
+        self._flushing = True
+        try:
+            while self._retry_queue:
+                payload = self._retry_queue[0]
+                try:
+                    await self.client.async_post_event(payload)
+                except Exception as err:
+                    if self._is_retryable(err):
+                        self.last_error_message = str(err)
+                        self._schedule_retry()
+                        return
+                    _LOGGER.error(
+                        "AutoLedger rejected a queued charge session, dropping it: %s", err
+                    )
+                self._retry_queue.pop(0)
+                self.sync_status = SYNC_STATUS_OK
+                self.last_successful_sync = dt_util.utcnow().isoformat()
+                self.last_error_message = None
         finally:
-            self._reset_session_data()
-            self._notify_listeners()
+            self._flushing = False
+            self.pending_events_count = len(self._retry_queue)
+            await self._async_persist()
+
+    async def _async_persist(self) -> None:
+        """Save the running session and the retry queue so a restart loses neither."""
+        if self._store is None:
+            return
+        data = {
+            "state": self.state,
+            "session_start_time": self.session_start_time,
+            "session_stop_time": self.session_stop_time,
+            "energy_start": self.energy_start,
+            "energy_last_seen": self.energy_last_seen,
+            "soc_start": self.soc_start,
+            "odometer_start": self.odometer_start,
+            "vehicles_soc_start": self._vehicles_soc_start,
+            "vehicles_odometer_start": self._vehicles_odometer_start,
+            "correlated_vehicle_id": self._correlated_vehicle_id,
+            "retry_queue": self._retry_queue,
+        }
+        try:
+            await self._store.async_save(data)
+        except Exception as err:
+            _LOGGER.warning("Could not save charger %s state: %s", self.charger_id, err)
+
+    async def _async_restore(self) -> None:
+        """Pick a session interrupted by a restart back up."""
+        if self._store is None:
+            return
+        try:
+            data = await self._store.async_load()
+        except Exception as err:
+            _LOGGER.warning("Could not load charger %s state: %s", self.charger_id, err)
+            return
+        if not isinstance(data, dict):
+            return
+
+        self._retry_queue = [q for q in data.get("retry_queue") or [] if isinstance(q, dict)]
+        self.pending_events_count = len(self._retry_queue)
+        self._schedule_retry()
+
+        saved_state = data.get("state")
+        if saved_state not in (STATE_CHARGING, STATE_COOLING_DOWN) or not data.get(
+            "session_start_time"
+        ):
+            return
+
+        self.session_start_time = data["session_start_time"]
+        self.session_stop_time = data.get("session_stop_time")
+        self.energy_start = data.get("energy_start")
+        self.energy_last_seen = data.get("energy_last_seen")
+        self.soc_start = data.get("soc_start")
+        self.odometer_start = data.get("odometer_start")
+        self._vehicles_soc_start = dict(data.get("vehicles_soc_start") or {})
+        self._vehicles_odometer_start = dict(data.get("vehicles_odometer_start") or {})
+        self._correlated_vehicle_id = data.get("correlated_vehicle_id")
+        self.state = STATE_CHARGING
+        _LOGGER.info("Resuming charging session of charger %s after a restart", self.charger_id)
+
+        status = (
+            self.hass.states.get(self.charging_status_entity)
+            if self.charging_status_entity
+            else None
+        )
+        if (
+            saved_state == STATE_CHARGING
+            and status is not None
+            and status.state.lower() not in UNKNOWN_STATES
+            and self._is_state_charging(status.state, self.charging_status_entity)
+        ):
+            return
+
+        if saved_state == STATE_COOLING_DOWN:
+            self.state = STATE_COOLING_DOWN
+            self._debounce_unsub = async_call_later(
+                self.hass, float(self.debounce_seconds), self._async_handle_debounce_expired
+            )
+        else:
+            await self._async_handle_charge_paused_or_stopped()
 
     def _reset_session_data(self) -> None:
         """Reset internal session registers."""

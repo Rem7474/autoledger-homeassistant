@@ -145,6 +145,12 @@ Standard energy loggers often register multiple tiny sessions of a few minutes, 
 3. **Resumption**: If charging resumes before the timer expires, the timer is aborted and the session continues seamlessly.
 4. **Completion**: If the timer expires, the total energy added (`energy_final - energy_start`), final SoC, and vehicle assignment are resolved and transmitted to AutoLedger in a single event.
 
+## 💾 Restarts & Offline Server
+
+- A running session is saved as it progresses. After a Home Assistant restart it resumes (charger still charging) or is finalized (charger stopped meanwhile).
+- When AutoLedger cannot be reached (network error, timeout, HTTP 5xx/408/429), the session is kept in a persisted queue and resent every 5 minutes and at startup. Each event carries a stable `event_id`, so a resent session is never duplicated. Up to 100 sessions are kept per charger.
+- A session AutoLedger refuses with another 4xx error is not retried.
+
 ---
 
 ## 📊 Exposed Sensors
@@ -187,7 +193,7 @@ data:
   odometer_km: 45120
   soc_start: 20
   soc_end: 80
-  location: "home"
+  location: "home"   # optional
 ```
 
 ---
