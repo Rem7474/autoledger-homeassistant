@@ -39,7 +39,7 @@ SERVICE_SUBMIT_CHARGE_SCHEMA = vol.Schema(
         vol.Optional("soc_end"): vol.Any(vol.Coerce(int), None),
         vol.Optional("start_time"): vol.Any(cv.string, None),
         vol.Optional("end_time"): vol.Any(cv.string, None),
-        vol.Optional("location", default="home"): cv.string,
+        vol.Optional("location"): cv.string,
     }
 )
 
@@ -75,7 +75,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         soc_end = call.data.get("soc_end")
         start_time = call.data.get("start_time")
         end_time = call.data.get("end_time")
-        location = call.data.get("location", "home")
+        location = call.data.get("location")
 
         domain_data = hass.data.get(DOMAIN, {})
         handled = False

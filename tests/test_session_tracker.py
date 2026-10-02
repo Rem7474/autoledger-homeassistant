@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from custom_components.autoledger.api import AutoLedgerApiError, AutoLedgerConnectionError
 from custom_components.autoledger.const import (
     ASSIGNMENT_MODE_CORRELATION,
     ASSIGNMENT_MODE_FIXED,
@@ -561,3 +562,133 @@ async def test_session_without_energy_is_not_sent(mock_hass, mock_client):
     assert mock_client.async_post_event.call_count == 0
     assert tracker.state == STATE_IDLE
     assert tracker.session_start_time is None
+
+
+class MemoryStore:
+    """Stand-in for homeassistant.helpers.storage.Store."""
+
+    def __init__(self, data=None):
+        self.data = data
+
+    async def async_load(self):
+        return self.data
+
+    async def async_save(self, data):
+        self.data = data
+
+
+CHARGER_CONFIG = {
+    CONF_CHARGING_STATUS_ENTITY: "binary_sensor.car_charging",
+    CONF_ENERGY_METER_ENTITY: "sensor.wallbox_energy",
+}
+
+
+async def run_session(tracker, hass, start="100.0", end="110.0"):
+    hass.states.set("sensor.wallbox_energy", start)
+    await tracker._async_on_charging_status_changed(create_state_event("off", "on"))
+    hass.states.set("sensor.wallbox_energy", end)
+    await tracker._async_on_charging_status_changed(create_state_event("on", "off"))
+    await tracker._async_handle_debounce_expired(None)
+
+
+@pytest.mark.asyncio
+async def test_running_session_survives_a_restart(mock_hass, mock_client):
+    store = MemoryStore()
+    mock_hass.states.set("sensor.wallbox_energy", "100.0")
+    mock_hass.states.set("binary_sensor.car_charging", "on")
+    first = AutoLedgerChargerTracker(mock_hass, mock_client, "v-1", CHARGER_CONFIG, store=store)
+    await first._async_on_charging_status_changed(create_state_event("off", "on"))
+    started_at = first.session_start_time
+
+    second = AutoLedgerChargerTracker(mock_hass, mock_client, "v-1", CHARGER_CONFIG, store=store)
+    await second.async_setup()
+
+    assert second.state == STATE_CHARGING
+    assert second.session_start_time == started_at
+    assert second.energy_start == 100.0
+
+    mock_hass.states.set("sensor.wallbox_energy", "112.5")
+    await second._async_on_charging_status_changed(create_state_event("on", "off"))
+    await second._async_handle_debounce_expired(None)
+
+    payload = mock_client.async_post_event.call_args[0][0]
+    assert payload["data"]["energy_added_kwh"] == 12.5
+    assert payload["data"]["start_time"] == started_at
+    assert store.data["state"] == STATE_IDLE
+
+
+@pytest.mark.asyncio
+async def test_session_ended_while_home_assistant_was_down_is_finalized(mock_hass, mock_client):
+    store = MemoryStore()
+    mock_hass.states.set("sensor.wallbox_energy", "100.0")
+    first = AutoLedgerChargerTracker(mock_hass, mock_client, "v-1", CHARGER_CONFIG, store=store)
+    await first._async_on_charging_status_changed(create_state_event("off", "on"))
+
+    mock_hass.states.set("sensor.wallbox_energy", "108.0")
+    mock_hass.states.set("binary_sensor.car_charging", "off")
+    second = AutoLedgerChargerTracker(mock_hass, mock_client, "v-1", CHARGER_CONFIG, store=store)
+    await second.async_setup()
+
+    assert second.state == STATE_COOLING_DOWN
+    await second._async_handle_debounce_expired(None)
+    assert mock_client.async_post_event.call_args[0][0]["data"]["energy_added_kwh"] == 8.0
+
+
+@pytest.mark.asyncio
+async def test_unreachable_server_queues_the_session_then_resends_it(mock_hass, mock_client):
+    store = MemoryStore()
+    mock_client.async_post_event.side_effect = AutoLedgerConnectionError("down")
+    tracker = AutoLedgerChargerTracker(mock_hass, mock_client, "v-1", CHARGER_CONFIG, store=store)
+    await run_session(tracker, mock_hass)
+
+    assert tracker.sync_status == SYNC_STATUS_ERROR
+    assert tracker.pending_events_count == 1
+    queued = store.data["retry_queue"][0]
+
+    mock_client.async_post_event.side_effect = None
+    await tracker._async_retry_tick(None)
+
+    assert tracker.sync_status == SYNC_STATUS_OK
+    assert tracker.pending_events_count == 0
+    assert store.data["retry_queue"] == []
+    assert mock_client.async_post_event.call_args[0][0] == queued
+    assert queued["event_id"].startswith("v-1:")
+
+
+@pytest.mark.asyncio
+async def test_queue_survives_a_restart(mock_hass, mock_client):
+    store = MemoryStore()
+    mock_client.async_post_event.side_effect = AutoLedgerApiError("boom", status_code=503)
+    first = AutoLedgerChargerTracker(mock_hass, mock_client, "v-1", CHARGER_CONFIG, store=store)
+    await run_session(first, mock_hass)
+
+    mock_client.async_post_event.side_effect = None
+    second = AutoLedgerChargerTracker(mock_hass, mock_client, "v-1", CHARGER_CONFIG, store=store)
+    await second.async_setup()
+
+    assert second.pending_events_count == 0
+    assert store.data["retry_queue"] == []
+    assert mock_client.async_post_event.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_server_refusal_is_not_retried(mock_hass, mock_client):
+    store = MemoryStore()
+    mock_client.async_post_event.side_effect = AutoLedgerApiError("bad", status_code=400)
+    tracker = AutoLedgerChargerTracker(mock_hass, mock_client, "v-1", CHARGER_CONFIG, store=store)
+    await run_session(tracker, mock_hass)
+
+    assert tracker.sync_status == SYNC_STATUS_ERROR
+    assert tracker.pending_events_count == 0
+    assert store.data["retry_queue"] == []
+
+
+@pytest.mark.asyncio
+async def test_flush_stops_at_the_first_failure_and_keeps_order(mock_hass, mock_client):
+    tracker = AutoLedgerChargerTracker(mock_hass, mock_client, "v-1", CHARGER_CONFIG)
+    tracker._retry_queue = [{"event_id": "a"}, {"event_id": "b"}]
+    mock_client.async_post_event.side_effect = [None, AutoLedgerConnectionError("down")]
+
+    await tracker.async_flush_retry_queue()
+
+    assert [q["event_id"] for q in tracker._retry_queue] == ["b"]

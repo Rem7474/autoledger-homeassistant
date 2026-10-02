@@ -9,6 +9,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.storage import Store
 
 from .api import AutoLedgerApiClient
 from .const import (
@@ -84,6 +85,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             config=charger_conf,
             vehicles_config=configured_vehicles,
             coordinator=coordinator,
+            store=Store(hass, 1, f"{DOMAIN}.{entry.entry_id}.charger.{charger_id}"),
         )
         await tracker.async_setup()
         trackers[charger_id] = tracker
@@ -99,6 +101,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     config=vehicle_conf,
                     vehicles_config=configured_vehicles,
                     coordinator=coordinator,
+                    store=Store(hass, 1, f"{DOMAIN}.{entry.entry_id}.charger.{vehicle_id}"),
                 )
                 await tracker.async_setup()
                 trackers[vehicle_id] = tracker
