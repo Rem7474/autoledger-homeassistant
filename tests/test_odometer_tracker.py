@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -237,11 +238,9 @@ async def test_odometer_tracker_trip_end_debounce(mock_hass, mock_client):
             "sensor.car_odometer", "50025.0", attributes={"unit_of_measurement": "km"}
         )
         # Simulate timer firing
-        scheduled_timer_callback(None)
-        # The callback spawns an async task on mock_hass
-        assert len(mock_hass._created_tasks) == 1
-        # Await the created task
-        await mock_hass._created_tasks[0]
+        # Home Assistant awaits a coroutine function itself; a plain function would run in a thread
+        assert inspect.iscoroutinefunction(scheduled_timer_callback)
+        await scheduled_timer_callback(None)
 
         # Exactly 1 single API call made with the final trip odometer!
         mock_client.async_update_odometer.assert_awaited_once_with(

@@ -160,9 +160,9 @@ class AutoLedgerOdometerTracker:
             self.debounce_seconds,
         )
 
-        def _on_debounce_expired(_now: Any, vid: str = target_vid) -> None:
+        async def _on_debounce_expired(_now: Any, vid: str = target_vid) -> None:
             self._debounce_timers.pop(vid, None)
-            self.hass.async_create_task(self._async_handle_debounce_expired(vid))
+            await self._async_handle_debounce_expired(vid)
 
         self._debounce_timers[target_vid] = async_call_later(
             self.hass,
@@ -239,9 +239,9 @@ class AutoLedgerOdometerTracker:
         if vehicle_id in self._retry_timers:
             return
 
-        def _on_retry(_now: Any) -> None:
+        async def _on_retry(_now: Any) -> None:
             self._retry_timers.pop(vehicle_id, None)
-            self.hass.async_create_task(self._async_retry(vehicle_id))
+            await self._async_retry(vehicle_id)
 
         self._retry_timers[vehicle_id] = async_call_later(
             self.hass, float(SYNC_RETRY_SECONDS), _on_retry
