@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import Event, EventStateChangedData, HomeAssistant
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
+from homeassistant.util import dt as dt_util
 
 from .api import AutoLedgerApiClient
 from .const import (
@@ -67,6 +69,22 @@ class AutoLedgerOdometerTracker:
         self._debounce_timers: dict[str, Callable[[], None]] = {}
         self._retry_timers: dict[str, Callable[[], None]] = {}
         self._unsub_trackers: list[Callable[[], None]] = []
+        self._last_sync_time: dict[str, datetime] = {}
+        self._listeners: list[Callable[[], None]] = []
+
+    def last_sync_time(self, vehicle_id: str) -> datetime | None:
+        """Return when an odometer reading was last pushed successfully for a vehicle."""
+        return self._last_sync_time.get(vehicle_id)
+
+    def register_listener(self, callback: Callable[[], None]) -> Callable[[], None]:
+        """Register a callback called after each successful sync; returns an unsubscribe."""
+        self._listeners.append(callback)
+
+        def _unsub() -> None:
+            if callback in self._listeners:
+                self._listeners.remove(callback)
+
+        return _unsub
 
     def set_last_synced_odometer(self, vehicle_id: str, km: float | None) -> None:
         """Record the latest odometer value synced by another component (e.g. charging session)."""
@@ -218,7 +236,10 @@ class AutoLedgerOdometerTracker:
                 odometer_km=odometer_km,
             )
             self._last_synced_odometer[vehicle_id] = odometer_km
+            self._last_sync_time[vehicle_id] = dt_util.utcnow()
             self._pending_odometer.pop(vehicle_id, None)
+            for listener in list(self._listeners):
+                listener()
             cancel = self._retry_timers.pop(vehicle_id, None)
             if cancel:
                 cancel()

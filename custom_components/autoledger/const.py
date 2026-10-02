@@ -94,5 +94,6 @@ ATTR_ENERGY_START_KWH = "energy_start_kwh"
 
 # Supported platforms
 PLATFORMS: list[Platform] = [
+    Platform.BUTTON,
     Platform.SENSOR,
 ]

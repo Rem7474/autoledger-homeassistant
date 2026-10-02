@@ -94,8 +94,10 @@ if "homeassistant" not in sys.modules:
         ha.components.sensor = ModuleType("homeassistant.components.sensor")
         ha.components.binary_sensor = ModuleType("homeassistant.components.binary_sensor")
         ha.components.diagnostics = ModuleType("homeassistant.components.diagnostics")
+        ha.components.button = ModuleType("homeassistant.components.button")
 
         class Platform(StrEnum):
+            BUTTON = "button"
             SENSOR = "sensor"
 
         ha.const.Platform = Platform
@@ -177,6 +179,7 @@ if "homeassistant" not in sys.modules:
             BATTERY = "battery"
             DISTANCE = "distance"
             ENERGY = "energy"
+            TIMESTAMP = "timestamp"
 
         class BinarySensorDeviceClass(StrEnum):
             BATTERY_CHARGING = "battery_charging"
@@ -194,6 +197,14 @@ if "homeassistant" not in sys.modules:
 
         ha.components.sensor.SensorDeviceClass = SensorDeviceClass
         ha.components.sensor.SensorEntity = SensorEntity
+
+        class ButtonEntity:
+            _attr_name = None
+            _attr_unique_id = None
+            _attr_device_info = None
+            _attr_icon = None
+
+        ha.components.button.ButtonEntity = ButtonEntity
         ha.components.sensor.SensorEntityDescription = MagicMock
         ha.components.binary_sensor.BinarySensorDeviceClass = BinarySensorDeviceClass
 
@@ -393,7 +404,13 @@ if "homeassistant" not in sys.modules:
         def er_async_entries_for_device(registry, device_id):
             return []
 
+        def er_async_entries_for_config_entry(registry, config_entry_id):
+            return []
+
         ha.helpers.entity_registry.async_get = er_async_get
+        ha.helpers.entity_registry.async_entries_for_config_entry = (
+            er_async_entries_for_config_entry
+        )
         ha.helpers.entity_registry.async_entries_for_device = er_async_entries_for_device
 
         # diagnostics
@@ -422,6 +439,7 @@ if "homeassistant" not in sys.modules:
         sys.modules["homeassistant.config_entries"] = ha.config_entries
         sys.modules["homeassistant.data_entry_flow"] = ha.data_entry_flow
         sys.modules["homeassistant.components"] = ha.components
+        sys.modules["homeassistant.components.button"] = ha.components.button
         sys.modules["homeassistant.components.sensor"] = ha.components.sensor
         sys.modules["homeassistant.components.binary_sensor"] = ha.components.binary_sensor
         sys.modules["homeassistant.components.diagnostics"] = ha.components.diagnostics
