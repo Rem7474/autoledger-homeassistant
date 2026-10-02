@@ -692,3 +692,12 @@ async def test_flush_stops_at_the_first_failure_and_keeps_order(mock_hass, mock_
     await tracker.async_flush_retry_queue()
 
     assert [q["event_id"] for q in tracker._retry_queue] == ["b"]
+
+
+@pytest.mark.asyncio
+async def test_per_session_counter_reset_to_zero_is_counted_from_zero(mock_hass, mock_client):
+    """A wallbox "session energy" sensor still shows the last session when the next one starts."""
+    tracker = AutoLedgerChargerTracker(mock_hass, mock_client, "v-1", CHARGER_CONFIG)
+    await run_session(tracker, mock_hass, start="32.68", end="11.4")
+
+    assert mock_client.async_post_event.call_args[0][0]["data"]["energy_added_kwh"] == 11.4
