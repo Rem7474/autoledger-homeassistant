@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -28,12 +29,14 @@ from .const import (
     ATTR_SESSION_START_TIME,
     CONF_CHARGER_NAME,
     CONF_CHARGERS,
+    CONF_ODOMETER_ENTITY,
     CONF_VEHICLE_NAME,
     CONF_VEHICLES,
     DOMAIN,
     STATE_COOLING_DOWN,
 )
 from .coordinator import AutoLedgerDataUpdateCoordinator
+from .odometer_tracker import AutoLedgerOdometerTracker
 from .session_tracker import AutoLedgerChargerTracker
 
 _LOGGER = logging.getLogger(__name__)
@@ -52,6 +55,7 @@ async def async_setup_entry(
     )
     coordinator: AutoLedgerDataUpdateCoordinator = data["coordinator"]
     trackers: dict[str, AutoLedgerChargerTracker] = data["trackers"]
+    odometer_tracker = data.get("odometer_tracker")
 
     configured_vehicles: dict[str, Any] = entry.options.get(CONF_VEHICLES, {})
     configured_chargers: dict[str, Any] = entry.options.get(CONF_CHARGERS, {})
@@ -91,6 +95,18 @@ async def async_setup_entry(
                 model=model,
             )
         )
+
+        # Last successful odometer push
+        if odometer_tracker and vehicle_conf.get(CONF_ODOMETER_ENTITY):
+            entities.append(
+                AutoLedgerOdometerLastSyncSensor(
+                    entry=entry,
+                    tracker=odometer_tracker,
+                    vehicle_id=vehicle_id,
+                    vehicle_name=v_name,
+                    device_info=_get_vehicle_device_info(entry, vehicle_id, v_name, make, model),
+                )
+            )
 
         # Backward compatibility for legacy tracker directly attached to vehicle
         if vehicle_id in trackers and vehicle_id not in configured_chargers:
@@ -470,3 +486,46 @@ class AutoLedgerChargerSyncStatusSensor(SensorEntity):
 # Aliases for backwards compatibility
 AutoLedgerChargingStateSensor = AutoLedgerChargerChargingStateSensor
 AutoLedgerSyncStatusSensor = AutoLedgerChargerSyncStatusSensor
+
+
+class AutoLedgerOdometerLastSyncSensor(SensorEntity):
+    """Timestamp of the last odometer reading pushed to AutoLedger for a vehicle."""
+
+    _attr_icon = "mdi:counter"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    def __init__(
+        self,
+        entry: ConfigEntry,
+        tracker: AutoLedgerOdometerTracker,
+        vehicle_id: str,
+        vehicle_name: str,
+        device_info: DeviceInfo | None = None,
+    ) -> None:
+        """Initialize the last odometer sync sensor."""
+        self._tracker = tracker
+        self._vehicle_id = vehicle_id
+        self._attr_name = f"{vehicle_name} Last Odometer Sync"
+        self._attr_unique_id = f"{entry.entry_id}_{vehicle_id}_odometer_last_sync"
+        self._attr_device_info = device_info
+        self._unsub_listener = None
+
+    async def async_added_to_hass(self) -> None:
+        """Register tracker callback when added to hass."""
+        self._unsub_listener = self._tracker.register_listener(self._handle_tracker_update)
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Unregister tracker callback."""
+        if self._unsub_listener:
+            self._unsub_listener()
+            self._unsub_listener = None
+
+    @callback
+    def _handle_tracker_update(self) -> None:
+        """Handle a successful sync."""
+        self.async_write_ha_state()
+
+    @property
+    def native_value(self) -> datetime | None:
+        """Return the time of the last successful odometer push."""
+        return self._tracker.last_sync_time(self._vehicle_id)

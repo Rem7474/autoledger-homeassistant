@@ -113,7 +113,7 @@ flowchart TD
 3. Select an AutoLedger vehicle synchronized from your server and optionally an associated Home Assistant Device to pre-fill entity fields.
 4. Map vehicle telemetry entities:
    - **Battery State of Charge (%)**: Vehicle battery percentage sensor (optional).
-   - **Vehicle Odometer (km)**: Vehicle distance sensor (optional).
+   - **Vehicle Odometer (km)**: Vehicle distance sensor (optional). With it set, the vehicle device gets a **Send Odometer** button (pushes the current reading even when it has not advanced) and a **Last Odometer Sync** timestamp sensor.
    - **Vehicle Internal Charging Status Sensor**: Internal charging sensor (optional, used for correlation mode).
 
 ### 3. Manage Charging Stations (`OptionsFlow` > 🔌 Manage Charging Stations)
