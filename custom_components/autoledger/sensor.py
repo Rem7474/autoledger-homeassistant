@@ -30,6 +30,7 @@ from .const import (
     CONF_CHARGER_NAME,
     CONF_CHARGERS,
     CONF_ODOMETER_ENTITY,
+    CONF_TRIP_LOCATION_ENTITY,
     CONF_VEHICLE_NAME,
     CONF_VEHICLES,
     DOMAIN,
@@ -38,6 +39,7 @@ from .const import (
 from .coordinator import AutoLedgerDataUpdateCoordinator
 from .odometer_tracker import AutoLedgerOdometerTracker
 from .session_tracker import AutoLedgerChargerTracker
+from .trip_tracker import AutoLedgerTripTracker
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -56,6 +58,7 @@ async def async_setup_entry(
     coordinator: AutoLedgerDataUpdateCoordinator = data["coordinator"]
     trackers: dict[str, AutoLedgerChargerTracker] = data["trackers"]
     odometer_tracker = data.get("odometer_tracker")
+    trip_tracker = data.get("trip_tracker")
 
     configured_vehicles: dict[str, Any] = entry.options.get(CONF_VEHICLES, {})
     configured_chargers: dict[str, Any] = entry.options.get(CONF_CHARGERS, {})
@@ -102,6 +105,18 @@ async def async_setup_entry(
                 AutoLedgerOdometerLastSyncSensor(
                     entry=entry,
                     tracker=odometer_tracker,
+                    vehicle_id=vehicle_id,
+                    vehicle_name=v_name,
+                    device_info=_get_vehicle_device_info(entry, vehicle_id, v_name, make, model),
+                )
+            )
+
+        # Last detected trip
+        if trip_tracker and vehicle_conf.get(CONF_TRIP_LOCATION_ENTITY):
+            entities.append(
+                AutoLedgerLastTripSensor(
+                    entry=entry,
+                    tracker=trip_tracker,
                     vehicle_id=vehicle_id,
                     vehicle_name=v_name,
                     device_info=_get_vehicle_device_info(entry, vehicle_id, v_name, make, model),
@@ -529,3 +544,71 @@ class AutoLedgerOdometerLastSyncSensor(SensorEntity):
     def native_value(self) -> datetime | None:
         """Return the time of the last successful odometer push."""
         return self._tracker.last_sync_time(self._vehicle_id)
+
+
+class AutoLedgerLastTripSensor(SensorEntity):
+    """End time of the last trip sent to AutoLedger, with its positions as attributes."""
+
+    _attr_icon = "mdi:map-marker-path"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    def __init__(
+        self,
+        entry: ConfigEntry,
+        tracker: AutoLedgerTripTracker,
+        vehicle_id: str,
+        vehicle_name: str,
+        device_info: DeviceInfo | None = None,
+    ) -> None:
+        """Initialize the last trip sensor."""
+        self._tracker = tracker
+        self._vehicle_id = vehicle_id
+        self._attr_name = f"{vehicle_name} Last Trip"
+        self._attr_unique_id = f"{entry.entry_id}_{vehicle_id}_last_trip"
+        self._attr_device_info = device_info
+        self._unsub_listener = None
+
+    async def async_added_to_hass(self) -> None:
+        """Register tracker callback when added to hass."""
+        self._unsub_listener = self._tracker.register_listener(self._handle_tracker_update)
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Unregister tracker callback."""
+        if self._unsub_listener:
+            self._unsub_listener()
+            self._unsub_listener = None
+
+    @callback
+    def _handle_tracker_update(self) -> None:
+        """Handle a newly sent trip."""
+        self.async_write_ha_state()
+
+    @property
+    def native_value(self) -> datetime | None:
+        """Return when the last trip ended."""
+        trip = self._tracker.last_trip(self._vehicle_id)
+        if not trip:
+            return None
+        return datetime.fromisoformat(trip["end_time"])
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the details of the last trip."""
+        trip = self._tracker.last_trip(self._vehicle_id)
+        if not trip:
+            return {}
+        return {
+            key: trip[key]
+            for key in (
+                "start_time",
+                "start_address",
+                "start_lat",
+                "start_lon",
+                "end_address",
+                "end_lat",
+                "end_lon",
+                "start_odometer_km",
+                "end_odometer_km",
+            )
+            if trip.get(key) is not None
+        }

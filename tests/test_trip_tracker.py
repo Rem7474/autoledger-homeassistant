@@ -294,3 +294,36 @@ async def test_manual_log_trip():
         is False
     )
     assert tracker._pending == []
+
+
+@pytest.mark.asyncio
+async def test_last_trip_sensor():
+    from homeassistant.config_entries import ConfigEntry
+
+    from custom_components.autoledger.sensor import AutoLedgerLastTripSensor
+
+    hass = MockHass()
+    tracker, _ = make(hass)
+    entry = ConfigEntry(entry_id="e1", data={}, options={})
+    sensor = AutoLedgerLastTripSensor(entry, tracker, "v1", "Car")
+    sensor.async_write_ha_state = MagicMock()
+    await sensor.async_added_to_hass()
+    assert sensor.native_value is None
+    assert sensor.extra_state_attributes == {}
+
+    await tracker.async_log_trip(
+        "v1",
+        datetime(2026, 1, 1, 8, tzinfo=UTC),
+        datetime(2026, 1, 1, 9, tzinfo=UTC),
+        start=HOME,
+        end_address="Bureau",
+    )
+    assert sensor.native_value == datetime(2026, 1, 1, 9, tzinfo=UTC)
+    attrs = sensor.extra_state_attributes
+    assert attrs["end_address"] == "Bureau"
+    assert attrs["start_lat"] == HOME[0]
+    assert "end_lat" not in attrs
+    assert sensor._attr_unique_id == "e1_v1_last_trip"
+    sensor.async_write_ha_state.assert_called_once()
+    await sensor.async_will_remove_from_hass()
+    assert tracker._listeners == []

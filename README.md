@@ -166,6 +166,7 @@ Standard energy loggers often register multiple tiny sessions of a few minutes, 
 |---|---|---|---|
 | `sensor.<vehicle>_last_charge_cost` | `monetary` | `€` / `$` | Total financial cost of the last charging session. |
 | `sensor.<vehicle>_cost_per_100km` | - | `€/100km` | Smoothed average operating energy cost per 100 km calculated by AutoLedger. |
+| `sensor.<vehicle>_last_trip` | `timestamp` | - | End of the last trip sent (only with a trip position entity). Attributes: start time, addresses, coordinates, odometer readings. |
 
 ### Charging Station Entities
 | Sensor Entity ID | Device Class | Unit | Description |
@@ -186,6 +187,10 @@ action: autoledger.sync
 data:
   entry_id: "optional_config_entry_id"
 ```
+
+### Service `autoledger.log_trip`
+
+Logs a trip by hand: `vehicle_id`, `start_time` and `end_time` are required; start/end latitude and longitude, addresses and start/end odometer (km) are optional. The distance is the odometer difference; without odometer values the trip has no distance.
 
 ### Service `autoledger.submit_charge`
 Manually push a charging session or trigger submissions via external automations / NFC tags.

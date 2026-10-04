@@ -375,6 +375,7 @@ if "homeassistant" not in sys.modules:
             return MagicMock()
 
         ha.helpers.config_validation.string = string
+        ha.helpers.config_validation.datetime = lambda v: v
         ha.helpers.config_validation.config_entry_only_config_schema = (
             config_entry_only_config_schema
         )
