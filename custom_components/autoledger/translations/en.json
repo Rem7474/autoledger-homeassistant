@@ -80,7 +80,9 @@
         "data": {
           "battery_soc_entity": "Battery State of Charge (%)",
           "odometer_entity": "Vehicle Odometer (km)",
-          "charging_status_entity": "Vehicle Internal Charging Status Sensor (Optional)"
+          "charging_status_entity": "Vehicle Internal Charging Status Sensor (Optional)",
+          "trip_location_entity": "Vehicle position for trips (device tracker, optional)",
+          "trip_moving_entity": "Vehicle moving / engine on sensor for trips (optional)"
         }
       },
       "vehicle_preview": {

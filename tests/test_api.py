@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import aiohttp
 import pytest
@@ -316,3 +316,26 @@ async def test_update_odometer_404_raises_without_fallback(mock_session):
     with pytest.raises(AutoLedgerApiError):
         await client.async_update_odometer("veh-123", 52300.4)
     assert mock_session.request.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_async_submit_drive_omits_unknown_fields():
+    client = AutoLedgerApiClient.__new__(AutoLedgerApiClient)
+    client.async_post_event = AsyncMock(return_value={})
+    await client.async_submit_drive(
+        "v1",
+        "v1-1",
+        "2026-01-01T08:00:00+00:00",
+        "2026-01-01T08:30:00+00:00",
+        start_lat=1.0,
+        start_lon=2.0,
+    )
+    payload = client.async_post_event.call_args.args[0]
+    assert payload["event_type"] == "drive"
+    assert payload["event_id"] == "v1-1"
+    assert payload["data"] == {
+        "start_time": "2026-01-01T08:00:00+00:00",
+        "end_time": "2026-01-01T08:30:00+00:00",
+        "start_lat": 1.0,
+        "start_lon": 2.0,
+    }

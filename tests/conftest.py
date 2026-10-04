@@ -395,6 +395,9 @@ if "homeassistant" not in sys.modules:
             async def async_save(self, data):
                 self.data = data
 
+            def async_delay_save(self, data_func, delay=0):
+                self.data = data_func()
+
         ha.helpers.storage.Store = Store
 
         # entity registry
@@ -487,6 +490,11 @@ class MockStates:
 
     def get(self, entity_id: str) -> MockState | None:
         return self._states.get(entity_id)
+
+    def async_all(self, domain: str | None = None) -> list[MockState]:
+        return [
+            s for eid, s in self._states.items() if domain is None or eid.startswith(f"{domain}.")
+        ]
 
 
 class MockServices:

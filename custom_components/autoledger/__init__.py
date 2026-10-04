@@ -27,6 +27,7 @@ from .coordinator import AutoLedgerDataUpdateCoordinator
 from .odometer_tracker import AutoLedgerOdometerTracker
 from .services import async_setup_services, async_unload_services
 from .session_tracker import AutoLedgerChargerTracker
+from .trip_tracker import AutoLedgerTripTracker
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -76,6 +77,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator.odometer_tracker = odometer_tracker
     await odometer_tracker.async_setup()
 
+    trip_tracker = AutoLedgerTripTracker(
+        hass=hass,
+        client=client,
+        vehicles_config=configured_vehicles,
+        store=Store(hass, 1, f"{DOMAIN}.{entry.entry_id}.trips"),
+        coordinator=coordinator,
+    )
+    await trip_tracker.async_setup()
+
     # Setup charger trackers for each configured charging station
     trackers: dict[str, AutoLedgerChargerTracker] = {}
     for charger_id, charger_conf in configured_chargers.items():
@@ -111,6 +121,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "client": client,
         "coordinator": coordinator,
         "odometer_tracker": odometer_tracker,
+        "trip_tracker": trip_tracker,
         "trackers": trackers,
     }
 
@@ -153,6 +164,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         odometer_tracker = data.get("odometer_tracker")
         if odometer_tracker:
             await odometer_tracker.async_unload()
+
+        trip_tracker = data.get("trip_tracker")
+        if trip_tracker:
+            await trip_tracker.async_unload()
 
         trackers = data.get("trackers", {})
         for tracker in trackers.values():

@@ -42,6 +42,8 @@ from .const import (
     CONF_HOST,
     CONF_LINKED_VEHICLE_ID,
     CONF_ODOMETER_ENTITY,
+    CONF_TRIP_LOCATION_ENTITY,
+    CONF_TRIP_MOVING_ENTITY,
     CONF_VEHICLE_ID,
     CONF_VEHICLE_NAME,
     CONF_VEHICLE_SELECT_ENTITY,
@@ -542,6 +544,8 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
             battery_ent = user_input.get(CONF_BATTERY_SOC_ENTITY)
             odometer_ent = user_input.get(CONF_ODOMETER_ENTITY)
             charging_ent = user_input.get(CONF_CHARGING_STATUS_ENTITY)
+            trip_location_ent = user_input.get(CONF_TRIP_LOCATION_ENTITY)
+            trip_moving_ent = user_input.get(CONF_TRIP_MOVING_ENTITY)
 
             battery_err = _validate_battery_sensor(self.hass, battery_ent)
             if battery_err:
@@ -555,12 +559,16 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
                 self._temp_vehicle[CONF_BATTERY_SOC_ENTITY] = battery_ent
                 self._temp_vehicle[CONF_ODOMETER_ENTITY] = odometer_ent
                 self._temp_vehicle[CONF_CHARGING_STATUS_ENTITY] = charging_ent
+                self._temp_vehicle[CONF_TRIP_LOCATION_ENTITY] = trip_location_ent
+                self._temp_vehicle[CONF_TRIP_MOVING_ENTITY] = trip_moving_ent
                 return await self.async_step_vehicle_preview()
 
         device_id = self._temp_vehicle.get(CONF_DEVICE_ID)
         prefill_battery = self._temp_vehicle.get(CONF_BATTERY_SOC_ENTITY)
         prefill_odometer = self._temp_vehicle.get(CONF_ODOMETER_ENTITY)
         prefill_charging = self._temp_vehicle.get(CONF_CHARGING_STATUS_ENTITY)
+        prefill_trip_location = self._temp_vehicle.get(CONF_TRIP_LOCATION_ENTITY)
+        prefill_trip_moving = self._temp_vehicle.get(CONF_TRIP_MOVING_ENTITY)
 
         if device_id and not prefill_battery:
             ent_reg = er.async_get(self.hass)
@@ -639,6 +647,16 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
                     domain=["binary_sensor", "sensor"],
                 )
             ),
+            vol.Optional(
+                CONF_TRIP_LOCATION_ENTITY,
+                description={"suggested_value": prefill_trip_location},
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain=["device_tracker", "person"])
+            ),
+            vol.Optional(
+                CONF_TRIP_MOVING_ENTITY,
+                description={"suggested_value": prefill_trip_moving},
+            ): selector.EntitySelector(selector.EntitySelectorConfig(domain="binary_sensor")),
         }
 
         return self.async_show_form(
@@ -665,6 +683,8 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
                 CONF_BATTERY_SOC_ENTITY: self._temp_vehicle.get(CONF_BATTERY_SOC_ENTITY),
                 CONF_ODOMETER_ENTITY: self._temp_vehicle.get(CONF_ODOMETER_ENTITY),
                 CONF_CHARGING_STATUS_ENTITY: self._temp_vehicle.get(CONF_CHARGING_STATUS_ENTITY),
+                CONF_TRIP_LOCATION_ENTITY: self._temp_vehicle.get(CONF_TRIP_LOCATION_ENTITY),
+                CONF_TRIP_MOVING_ENTITY: self._temp_vehicle.get(CONF_TRIP_MOVING_ENTITY),
             }
 
             new_options = dict(self._config_entry.options)

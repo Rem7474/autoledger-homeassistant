@@ -80,7 +80,9 @@
         "data": {
           "battery_soc_entity": "Niveau de batterie SoC (%)",
           "odometer_entity": "Odomètre du véhicule (km)",
-          "charging_status_entity": "Capteur d'état de charge interne du véhicule (Optionnel)"
+          "charging_status_entity": "Capteur d'état de charge interne du véhicule (Optionnel)",
+          "trip_location_entity": "Position du véhicule pour les trajets (device tracker, optionnel)",
+          "trip_moving_entity": "Capteur « en route » / moteur allumé pour les trajets (optionnel)"
         }
       },
       "vehicle_preview": {

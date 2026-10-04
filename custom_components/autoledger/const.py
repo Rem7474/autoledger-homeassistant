@@ -17,6 +17,8 @@ CONF_VEHICLE_NAME = "vehicle_name"
 CONF_DEVICE_ID = "device_id"
 CONF_BATTERY_SOC_ENTITY = "battery_soc_entity"
 CONF_ODOMETER_ENTITY = "odometer_entity"
+CONF_TRIP_LOCATION_ENTITY = "trip_location_entity"
+CONF_TRIP_MOVING_ENTITY = "trip_moving_entity"
 
 # Charger configuration keys
 CONF_CHARGER_ID = "charger_id"
@@ -60,6 +62,11 @@ DEFAULT_SCAN_INTERVAL_MINUTES = 15
 DEFAULT_ASSIGNMENT_MODE = ASSIGNMENT_MODE_FIXED
 DEFAULT_TRIP_END_DEBOUNCE_SECONDS = 300
 MIN_DEBOUNCE_SECONDS = 15
+# Trip tracking: a position moving away from where the vehicle was parked by more than this starts a trip
+TRIP_MOVE_THRESHOLD_M = 100.0
+# A trip shorter than this that ends where it started is GPS noise, not a trip
+TRIP_MIN_SECONDS = 120
+TRIP_MIN_ODOMETER_KM = 0.1
 MAX_DEBOUNCE_SECONDS = 300
 
 # Event types
@@ -68,6 +75,7 @@ INTEGRATION_API = "/api/integrations/homeassistant"
 
 EVENT_TYPE_CHARGING_SESSION_END = "charging_session_end"
 EVENT_TYPE_ODOMETER_UPDATE = "odometer_update"
+EVENT_TYPE_DRIVE = "drive"
 
 # Charging states
 STATE_IDLE = "idle"
