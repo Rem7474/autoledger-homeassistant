@@ -115,6 +115,12 @@ flowchart TD
    - **Battery State of Charge (%)**: Vehicle battery percentage sensor (optional).
    - **Vehicle Odometer (km)**: Vehicle distance sensor (optional). With it set, the vehicle device gets a **Send Odometer** button (pushes the current reading even when it has not advanced) and a **Last Odometer Sync** timestamp sensor.
    - **Vehicle Internal Charging Status Sensor**: Internal charging sensor (optional, used for correlation mode).
+   - **Vehicle position for trips**: `device_tracker` or `person` entity (optional). Setting it enables trip tracking for this vehicle.
+   - **Vehicle moving / engine on sensor for trips**: binary sensor (optional). When set, `on` opens a trip and `off` closes it after a short debounce. Without it, a trip opens when the position moves more than 100 m away from where the vehicle was parked (or the odometer increases) and closes after 5 minutes without movement.
+
+### Trips
+
+Each finished trip is sent to AutoLedger with its start/end time and position. The distance is never computed from GPS: it is the difference between the odometer readings at the start and end of the trip, and a trip without an odometer is recorded without a distance. When a point is inside a Home Assistant zone, the zone name is sent as the address; otherwise only the coordinates are sent (AutoLedger can resolve addresses if its reverse geocoding is enabled). Very short trips that end where they started are ignored, an unsent trip is retried every 5 minutes, and a trip in progress survives a Home Assistant restart.
 
 ### 3. Manage Charging Stations (`OptionsFlow` > 🔌 Manage Charging Stations)
 

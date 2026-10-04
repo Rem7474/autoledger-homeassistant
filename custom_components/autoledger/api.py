@@ -9,7 +9,7 @@ import aiohttp
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 
-from .const import EVENT_TYPE_ODOMETER_UPDATE, INTEGRATION_API
+from .const import EVENT_TYPE_DRIVE, EVENT_TYPE_ODOMETER_UPDATE, INTEGRATION_API
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -223,5 +223,44 @@ class AutoLedgerApiClient:
             "data": {
                 "odometer_km": round(odometer_km, 1),
             },
+        }
+        return await self.async_post_event(payload)
+
+    async def async_submit_drive(
+        self,
+        vehicle_id: str,
+        event_id: str,
+        start_time: str,
+        end_time: str,
+        start_lat: float | None = None,
+        start_lon: float | None = None,
+        end_lat: float | None = None,
+        end_lon: float | None = None,
+        start_address: str | None = None,
+        end_address: str | None = None,
+        start_odometer_km: float | None = None,
+        end_odometer_km: float | None = None,
+    ) -> dict[str, Any]:
+        """Send a finished trip. The distance is left to AutoLedger: it is the odometer difference, or unknown."""
+        data: dict[str, Any] = {"start_time": start_time, "end_time": end_time}
+        optional = {
+            "start_lat": start_lat,
+            "start_lon": start_lon,
+            "end_lat": end_lat,
+            "end_lon": end_lon,
+            "start_address": start_address,
+            "end_address": end_address,
+            "start_odometer": start_odometer_km,
+            "end_odometer": end_odometer_km,
+        }
+        data.update({key: value for key, value in optional.items() if value is not None})
+        payload = {
+            "vehicle_id": vehicle_id,
+            "event_id": event_id,
+            "event_type": EVENT_TYPE_DRIVE,
+            "source": "homeassistant",
+            "timestamp": start_time,
+            "distance_unit": "km",
+            "data": data,
         }
         return await self.async_post_event(payload)
