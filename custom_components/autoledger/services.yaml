@@ -115,3 +115,91 @@ sync_odometer:
       example: "01J9XYZABCD..."
       selector:
         text:
+
+log_trip:
+  name: Log Trip
+  description: Manually log a trip. The distance is derived by AutoLedger from the odometer values; without them the trip is recorded without a distance.
+  fields:
+    vehicle_id:
+      name: Vehicle ID
+      description: The AutoLedger Vehicle ID.
+      required: true
+      example: "c1f7a4b0-9b3e-4b2a-8921-729c4ef76a01"
+      selector:
+        text:
+    start_time:
+      name: Start Time
+      description: When the trip started.
+      required: true
+      selector:
+        datetime:
+    end_time:
+      name: End Time
+      description: When the trip ended.
+      required: true
+      selector:
+        datetime:
+    start_latitude:
+      name: Start Latitude
+      required: false
+      selector:
+        number:
+          min: -90
+          max: 90
+          step: any
+          mode: box
+    start_longitude:
+      name: Start Longitude
+      required: false
+      selector:
+        number:
+          min: -180
+          max: 180
+          step: any
+          mode: box
+    end_latitude:
+      name: End Latitude
+      required: false
+      selector:
+        number:
+          min: -90
+          max: 90
+          step: any
+          mode: box
+    end_longitude:
+      name: End Longitude
+      required: false
+      selector:
+        number:
+          min: -180
+          max: 180
+          step: any
+          mode: box
+    start_address:
+      name: Start Address
+      description: Overrides the address resolved from coordinates.
+      required: false
+      selector:
+        text:
+    end_address:
+      name: End Address
+      description: Overrides the address resolved from coordinates.
+      required: false
+      selector:
+        text:
+    start_odometer_km:
+      name: Start Odometer (km)
+      required: false
+      selector:
+        number:
+          min: 0
+          step: any
+          mode: box
+    end_odometer_km:
+      name: End Odometer (km)
+      required: false
+      selector:
+        number:
+          min: 0
+          step: any
+          mode: box
