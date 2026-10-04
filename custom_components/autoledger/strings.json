@@ -185,6 +185,10 @@
     "submit_charge": {
       "name": "Submit Charging Session",
       "description": "Manually submit or automate logging of a charging session into AutoLedger."
+    },
+    "log_trip": {
+      "name": "Log Trip",
+      "description": "Manually log a trip with its start and end position. The distance comes from the odometer values."
     }
   }
 }

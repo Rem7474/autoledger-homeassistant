@@ -23,6 +23,7 @@ async def test_services_registration_and_calls(mock_hass):
     assert mock_hass.services.has_service(DOMAIN, SERVICE_SYNC)
     assert mock_hass.services.has_service(DOMAIN, SERVICE_SUBMIT_CHARGE)
     assert mock_hass.services.has_service(DOMAIN, "sync_odometer")
+    assert mock_hass.services.has_service(DOMAIN, "log_trip")
 
     # Mock coordinator, tracker, odometer_tracker, and client
     coordinator = MagicMock()
@@ -96,3 +97,40 @@ async def test_services_registration_and_calls(mock_hass):
     assert not mock_hass.services.has_service(DOMAIN, SERVICE_SYNC)
     assert not mock_hass.services.has_service(DOMAIN, SERVICE_SUBMIT_CHARGE)
     assert not mock_hass.services.has_service(DOMAIN, "sync_odometer")
+    assert not mock_hass.services.has_service(DOMAIN, "log_trip")
+
+
+@pytest.mark.asyncio
+async def test_log_trip_service(mock_hass):
+    from datetime import UTC, datetime
+
+    await async_setup_services(mock_hass)
+    handler = mock_hass.services._services[(DOMAIN, "log_trip")]
+    call = MagicMock()
+    start = datetime(2026, 1, 1, 8, tzinfo=UTC)
+    end = datetime(2026, 1, 1, 9, tzinfo=UTC)
+    call.data = {
+        "vehicle_id": "v1",
+        "start_time": start,
+        "end_time": end,
+        "start_latitude": 45.0,
+        "start_longitude": 6.0,
+        "end_latitude": 46.0,
+        "start_odometer_km": 10.0,
+    }
+
+    # No entry yet: nothing to call, no crash
+    await handler(call)
+
+    tracker = MagicMock(async_log_trip=AsyncMock(return_value=True))
+    mock_hass.data[DOMAIN] = {"e1": {"trip_tracker": tracker}}
+    await handler(call)
+    kwargs = tracker.async_log_trip.call_args.kwargs
+    assert kwargs["start"] == (45.0, 6.0)
+    assert kwargs["end"] is None  # a latitude alone is not a position
+    assert kwargs["start_odometer_km"] == 10.0
+
+    call.data = {**call.data, "start_time": end, "end_time": start}
+    tracker.async_log_trip.reset_mock()
+    await handler(call)
+    tracker.async_log_trip.assert_not_called()

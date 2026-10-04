@@ -185,6 +185,10 @@
     "submit_charge": {
       "name": "Enregistrer une Session de Charge",
       "description": "Soumet manuellement ou automatise l'enregistrement d'une session de charge dans AutoLedger."
+    },
+    "log_trip": {
+      "name": "Enregistrer un trajet",
+      "description": "Enregistre manuellement un trajet avec ses positions de départ et d'arrivée. La distance provient des valeurs d'odomètre."
     }
   }
 }

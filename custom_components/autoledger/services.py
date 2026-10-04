@@ -15,6 +15,7 @@ _LOGGER = logging.getLogger(__name__)
 SERVICE_SYNC = "sync"
 SERVICE_SUBMIT_CHARGE = "submit_charge"
 SERVICE_SYNC_ODOMETER = "sync_odometer"
+SERVICE_LOG_TRIP = "log_trip"
 
 SERVICE_SYNC_SCHEMA = vol.Schema(
     {
@@ -40,6 +41,22 @@ SERVICE_SUBMIT_CHARGE_SCHEMA = vol.Schema(
         vol.Optional("start_time"): vol.Any(cv.string, None),
         vol.Optional("end_time"): vol.Any(cv.string, None),
         vol.Optional("location"): cv.string,
+    }
+)
+
+SERVICE_LOG_TRIP_SCHEMA = vol.Schema(
+    {
+        vol.Required("vehicle_id"): cv.string,
+        vol.Required("start_time"): cv.datetime,
+        vol.Required("end_time"): cv.datetime,
+        vol.Optional("start_latitude"): vol.Coerce(float),
+        vol.Optional("start_longitude"): vol.Coerce(float),
+        vol.Optional("end_latitude"): vol.Coerce(float),
+        vol.Optional("end_longitude"): vol.Coerce(float),
+        vol.Optional("start_address"): cv.string,
+        vol.Optional("end_address"): cv.string,
+        vol.Optional("start_odometer_km"): vol.Coerce(float),
+        vol.Optional("end_odometer_km"): vol.Coerce(float),
     }
 )
 
@@ -145,6 +162,43 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         if not synced:
             _LOGGER.warning("No vehicle odometer synced via service call")
 
+    async def async_handle_log_trip(call: ServiceCall) -> None:
+        """Handle the log_trip service call."""
+        data = call.data
+
+        def point(prefix: str) -> tuple[float, float] | None:
+            lat, lon = data.get(f"{prefix}_latitude"), data.get(f"{prefix}_longitude")
+            return (lat, lon) if lat is not None and lon is not None else None
+
+        for trip_tracker in (d.get("trip_tracker") for d in hass.data.get(DOMAIN, {}).values()):
+            if trip_tracker is None:
+                continue
+            if data["end_time"] < data["start_time"]:
+                _LOGGER.error("Cannot log trip: end_time is before start_time")
+                return
+            await trip_tracker.async_log_trip(
+                vehicle_id=data["vehicle_id"],
+                start_time=data["start_time"],
+                end_time=data["end_time"],
+                start=point("start"),
+                end=point("end"),
+                start_address=data.get("start_address"),
+                end_address=data.get("end_address"),
+                start_odometer_km=data.get("start_odometer_km"),
+                end_odometer_km=data.get("end_odometer_km"),
+            )
+            return
+
+        _LOGGER.error("Cannot log trip: No active AutoLedger entry found")
+
+    if not hass.services.has_service(DOMAIN, SERVICE_LOG_TRIP):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_LOG_TRIP,
+            async_handle_log_trip,
+            schema=SERVICE_LOG_TRIP_SCHEMA,
+        )
+
     if not hass.services.has_service(DOMAIN, SERVICE_SYNC):
         hass.services.async_register(
             DOMAIN,
@@ -183,3 +237,6 @@ async def async_unload_services(hass: HomeAssistant) -> None:
 
     if hass.services.has_service(DOMAIN, SERVICE_SYNC_ODOMETER):
         hass.services.async_remove(DOMAIN, SERVICE_SYNC_ODOMETER)
+
+    if hass.services.has_service(DOMAIN, SERVICE_LOG_TRIP):
+        hass.services.async_remove(DOMAIN, SERVICE_LOG_TRIP)
