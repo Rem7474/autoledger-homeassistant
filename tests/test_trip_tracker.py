@@ -87,13 +87,25 @@ def test_zone_name_ignores_passive_zones():
     hass.states.set(
         "zone.passive",
         "0",
-        {"latitude": HOME[0], "longitude": HOME[1], "radius": 50, "friendly_name": "Passive", "passive": True},
+        {
+            "latitude": HOME[0],
+            "longitude": HOME[1],
+            "radius": 50,
+            "friendly_name": "Passive",
+            "passive": True,
+        },
     )
     assert zone_name_at(hass, *HOME) is None
     hass.states.set(
         "zone.home",
         "0",
-        {"latitude": HOME[0], "longitude": HOME[1], "radius": 100, "friendly_name": "Home", "passive": False},
+        {
+            "latitude": HOME[0],
+            "longitude": HOME[1],
+            "radius": 100,
+            "friendly_name": "Home",
+            "passive": False,
+        },
     )
     assert zone_name_at(hass, *HOME) == "Home"
 
