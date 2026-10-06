@@ -68,10 +68,12 @@ def read_position(hass: HomeAssistant, entity_id: str | None) -> tuple[float, fl
 
 
 def zone_name_at(hass: HomeAssistant, lat: float, lon: float) -> str | None:
-    """Friendly name of the smallest Home Assistant zone containing the point."""
+    """Friendly name of the smallest active (non-passive) Home Assistant zone containing the point."""
     best: tuple[float, str] | None = None
     for zone in hass.states.async_all("zone"):
         attrs = zone.attributes or {}
+        if attrs.get("passive") is True or str(attrs.get("passive")).lower() == "true":
+            continue
         try:
             z_lat = float(attrs["latitude"])
             z_lon = float(attrs["longitude"])
