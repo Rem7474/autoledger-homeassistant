@@ -82,6 +82,22 @@ def test_zone_name_picks_smallest_containing_zone():
     assert zone_name_at(hass, *FAR) is None
 
 
+def test_zone_name_ignores_passive_zones():
+    hass = MockHass()
+    hass.states.set(
+        "zone.passive",
+        "0",
+        {"latitude": HOME[0], "longitude": HOME[1], "radius": 50, "friendly_name": "Passive", "passive": True},
+    )
+    assert zone_name_at(hass, *HOME) is None
+    hass.states.set(
+        "zone.home",
+        "0",
+        {"latitude": HOME[0], "longitude": HOME[1], "radius": 100, "friendly_name": "Home", "passive": False},
+    )
+    assert zone_name_at(hass, *HOME) == "Home"
+
+
 def test_only_vehicles_with_a_position_entity_are_tracked():
     tracker, _ = make(MockHass())
     assert list(tracker.vehicles_config) == ["v1"]
