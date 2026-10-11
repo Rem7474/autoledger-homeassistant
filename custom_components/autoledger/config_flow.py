@@ -41,6 +41,7 @@ from .const import (
     CONF_ENERGY_METER_TYPE,
     CONF_HOST,
     CONF_LINKED_VEHICLE_ID,
+    CONF_LOCATION_ENTITY,
     CONF_ODOMETER_ENTITY,
     CONF_VEHICLE_ID,
     CONF_VEHICLE_NAME,
@@ -841,6 +842,7 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
         )
         prefill_debounce = self._temp_charger.get(CONF_DEBOUNCE_SECONDS, DEFAULT_DEBOUNCE_SECONDS)
         prefill_location = self._temp_charger.get(CONF_CHARGING_LOCATION, DEFAULT_CHARGING_LOCATION)
+        prefill_location_entity = self._temp_charger.get(CONF_LOCATION_ENTITY)
 
         preview_lines = []
         if prefill_status:
@@ -913,6 +915,18 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
                     step=5,
                     mode=selector.NumberSelectorMode.SLIDER,
                 )
+            )
+        )
+
+        # The state of this entity (a zone name, a text) names the place of each session; the tag below is the fallback
+        fields[
+            vol.Optional(
+                CONF_LOCATION_ENTITY,
+                description={"suggested_value": prefill_location_entity},
+            )
+        ] = selector.EntitySelector(
+            selector.EntitySelectorConfig(
+                domain=["device_tracker", "sensor", "input_text", "input_select"],
             )
         )
 
@@ -1048,6 +1062,7 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
                 CONF_CHARGING_LOCATION: self._temp_charger.get(
                     CONF_CHARGING_LOCATION, DEFAULT_CHARGING_LOCATION
                 ),
+                CONF_LOCATION_ENTITY: self._temp_charger.get(CONF_LOCATION_ENTITY),
                 CONF_ASSIGNMENT_MODE: self._temp_charger.get(
                     CONF_ASSIGNMENT_MODE, DEFAULT_ASSIGNMENT_MODE
                 ),

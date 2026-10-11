@@ -125,7 +125,8 @@ flowchart TD
    - **Charging Energy Sensor (kWh)**: Energy sensor from your wallbox or sub-meter.
    - **Energy Counter Mode**: `Total Increasing` (cumulative kWh) or `Session Energy` (resets per charge).
    - **Solar Anti-Bounce Debounce (seconds)**: Delay timer before finalizing a session (15s - 300s, default: 60s).
-   - **Default Location Tag**: Default location string sent to AutoLedger (default: `home`).
+   - **Location Entity** (optional): An entity whose state names the place of each session, such as the vehicle's `device_tracker` (its zone name) or an `input_text`. Read when the session ends.
+   - **Default Location Tag**: Optional location string sent to AutoLedger (empty by default). When it is empty and no location entity is set, AutoLedger names the place after the charging station.
 3. **Step 2: Vehicle Assignment Strategy**:
    - **Fixed**: Select a linked vehicle from your configured vehicles.
    - **Dynamic Selector (input_select)**: Select an `input_select` or sensor entity indicating the vehicle currently connected.

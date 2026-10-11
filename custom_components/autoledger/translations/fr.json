@@ -129,6 +129,7 @@
           "energy_meter_entity": "Capteur d'Énergie de Charge (kWh)",
           "energy_meter_type": "Type de Comptage d'Énergie",
           "debounce_seconds": "Délai anti-rebond solaire (secondes)",
+          "location_entity": "Entité de Lieu (optionnelle)",
           "charging_location": "Tag de Lieu par Défaut"
         }
       },

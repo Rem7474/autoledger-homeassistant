@@ -129,6 +129,7 @@
           "energy_meter_entity": "Charging Energy Sensor (kWh)",
           "energy_meter_type": "Energy Counter Mode",
           "debounce_seconds": "Solar Anti-Bounce Debounce (seconds)",
+          "location_entity": "Location Entity (optional)",
           "charging_location": "Default Location Tag"
         }
       },

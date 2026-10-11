@@ -22,6 +22,7 @@ from custom_components.autoledger.const import (
     CONF_ENERGY_METER_ENTITY,
     CONF_ENERGY_METER_TYPE,
     CONF_LINKED_VEHICLE_ID,
+    CONF_LOCATION_ENTITY,
     CONF_ODOMETER_ENTITY,
     CONF_VEHICLE_ID,
     CONF_VEHICLE_NAME,
@@ -701,3 +702,45 @@ async def test_per_session_counter_reset_to_zero_is_counted_from_zero(mock_hass,
     await run_session(tracker, mock_hass, start="32.68", end="11.4")
 
     assert mock_client.async_post_event.call_args[0][0]["data"]["energy_added_kwh"] == 11.4
+
+
+@pytest.mark.asyncio
+async def test_session_without_location_sends_none(mock_hass, mock_client):
+    """No location entity and no default tag: the event carries no location."""
+    mock_hass.states.set("sensor.car_battery", "20")
+    mock_hass.states.set("sensor.wallbox_energy", "500.0")
+    config = {
+        CONF_CHARGER_NAME: "Wallbox Garage",
+        CONF_CHARGING_STATUS_ENTITY: "binary_sensor.car_charging",
+        CONF_BATTERY_SOC_ENTITY: "sensor.car_battery",
+        CONF_ENERGY_METER_ENTITY: "sensor.wallbox_energy",
+        CONF_ENERGY_METER_TYPE: ENERGY_METER_TYPE_TOTAL_INCREASING,
+        CONF_DEBOUNCE_SECONDS: 60,
+    }
+    tracker = AutoLedgerChargerTracker(mock_hass, mock_client, "v-1", config)
+    assert tracker.location == ""
+
+    await tracker._async_on_charging_status_changed(create_state_event("off", "on"))
+    mock_hass.states.set("sensor.wallbox_energy", "512.0")
+    await tracker._async_on_charging_status_changed(create_state_event("on", "off"))
+    await tracker._async_handle_debounce_expired(None)
+
+    payload = mock_client.async_post_event.call_args[0][0]
+    assert payload["data"]["location"] is None
+    assert payload["data"]["charger_name"] == "Wallbox Garage"
+
+
+def test_location_entity_state_wins_over_the_default_tag(mock_hass, mock_client):
+    """The state of the location entity names the place; the tag is the fallback."""
+    mock_hass.states.set("device_tracker.car", "Work")
+    config = {
+        CONF_CHARGER_NAME: "Wallbox",
+        CONF_CHARGING_STATUS_ENTITY: "binary_sensor.car_charging",
+        CONF_LOCATION_ENTITY: "device_tracker.car",
+        CONF_CHARGING_LOCATION: "home",
+    }
+    tracker = AutoLedgerChargerTracker(mock_hass, mock_client, "v-1", config)
+    assert tracker.location == "Work"
+
+    mock_hass.states.set("device_tracker.car", "unavailable")
+    assert tracker.location == "home"
