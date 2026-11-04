@@ -29,9 +29,9 @@ async def test_flow_user_form_initial(mock_hass):
     flow = AutoLedgerConfigFlow()
     flow.hass = mock_hass
 
-    result = await flow.async_step_user(user_input=None)
+    result = await flow.async_step_token(user_input=None)
     assert result["type"] == "form"
-    assert result["step_id"] == "user"
+    assert result["step_id"] == "token"
     assert result["errors"] == {}
 
 
@@ -52,7 +52,7 @@ async def test_flow_user_success(mock_hass):
         new_callable=AsyncMock,
         return_value=True,
     ):
-        result = await flow.async_step_user(user_input=user_input)
+        result = await flow.async_step_token(user_input=user_input)
 
     assert result["type"] == "create_entry"
     assert "192.168.1.100:8080" in result["title"]
@@ -76,7 +76,7 @@ async def test_flow_user_invalid_auth(mock_hass):
         "custom_components.autoledger.config_flow.AutoLedgerApiClient.async_validate",
         side_effect=AutoLedgerAuthError("Invalid credentials"),
     ):
-        result = await flow.async_step_user(user_input=user_input)
+        result = await flow.async_step_token(user_input=user_input)
 
     assert result["type"] == "form"
     assert result["errors"]["base"] == "invalid_auth"
@@ -98,7 +98,7 @@ async def test_flow_user_cannot_connect(mock_hass):
         "custom_components.autoledger.config_flow.AutoLedgerApiClient.async_validate",
         side_effect=AutoLedgerConnectionError("Unreachable"),
     ):
-        result = await flow.async_step_user(user_input=user_input)
+        result = await flow.async_step_token(user_input=user_input)
 
     assert result["type"] == "form"
     assert result["errors"]["base"] == "cannot_connect"
@@ -116,9 +116,9 @@ async def test_flow_reconfigure(mock_hass):
     flow._reconfigure_entry = entry
 
     # Initial form
-    form = await flow.async_step_reconfigure(user_input=None)
+    form = await flow.async_step_reconfigure_token(user_input=None)
     assert form["type"] == "form"
-    assert form["step_id"] == "reconfigure"
+    assert form["step_id"] == "reconfigure_token"
 
     # Submit valid update
     with patch(
@@ -126,7 +126,7 @@ async def test_flow_reconfigure(mock_hass):
         new_callable=AsyncMock,
         return_value=True,
     ):
-        res = await flow.async_step_reconfigure(
+        res = await flow.async_step_reconfigure_token(
             user_input={
                 CONF_HOST: "http://new.local",
                 CONF_API_KEY: "new_key",
@@ -217,7 +217,7 @@ async def test_user_step_rejects_a_read_only_token(mock_hass):
         "custom_components.autoledger.config_flow.AutoLedgerApiClient.async_validate",
         side_effect=AutoLedgerScopeError("read"),
     ):
-        result = await flow.async_step_user(
+        result = await flow.async_step_token(
             {CONF_HOST: "http://autoledger.local", CONF_API_KEY: "al_live_x"}
         )
 
@@ -238,7 +238,7 @@ async def test_reconfigure_moves_the_unique_id_with_the_host(mock_hass):
         new_callable=AsyncMock,
         return_value={},
     ):
-        result = await flow.async_step_reconfigure(
+        result = await flow.async_step_reconfigure_token(
             {CONF_HOST: "https://New.Example/", CONF_API_KEY: "k"}
         )
 
@@ -257,7 +257,9 @@ async def test_reconfigure_refuses_a_host_another_entry_already_uses(mock_hass):
     flow._reconfigure_entry = entry
     flow._current_entries = [entry, other]
 
-    result = await flow.async_step_reconfigure({CONF_HOST: "http://B.local", CONF_API_KEY: "k"})
+    result = await flow.async_step_reconfigure_token(
+        {CONF_HOST: "http://B.local", CONF_API_KEY: "k"}
+    )
 
     assert result == {"type": "abort", "reason": "already_configured"}
     assert entry.data[CONF_HOST] == "http://autoledger.local"

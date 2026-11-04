@@ -10,23 +10,18 @@ from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
 
-from .api import AutoLedgerApiClient
 from .const import (
     AUTH_METHOD_TOKEN,
-    CONF_API_KEY,
     CONF_AUTH_METHOD,
     CONF_CHARGERS,
-    CONF_HOST,
     CONF_VEHICLES,
-    CONF_VERIFY_SSL,
-    DEFAULT_VERIFY_SSL,
     DOMAIN,
     PLATFORMS,
 )
 from .coordinator import AutoLedgerDataUpdateCoordinator
+from .oauth import build_client
 from .odometer_tracker import AutoLedgerOdometerTracker
 from .services import async_setup_services, async_unload_services
 from .session_tracker import AutoLedgerChargerTracker
@@ -87,17 +82,7 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up AutoLedger from a config entry."""
-    host = entry.data[CONF_HOST]
-    api_key = entry.data[CONF_API_KEY]
-    verify_ssl = entry.data.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
-
-    session = async_get_clientsession(hass)
-    client = AutoLedgerApiClient(
-        host=host,
-        api_key=api_key,
-        session=session,
-        verify_ssl=verify_ssl,
-    )
+    client = build_client(hass, entry)
 
     configured_vehicles = vehicles_config(entry)
     configured_chargers = chargers_config(entry)
@@ -147,6 +132,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         trackers[charger_id] = tracker
 
     entry_data = {
+        "config_signature": _config_signature(entry),
         "client": client,
         "coordinator": coordinator,
         "odometer_tracker": odometer_tracker,
@@ -207,6 +193,23 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return unload_ok
 
 
+def _config_signature(entry: ConfigEntry) -> tuple[Any, ...]:
+    """What a reload would change: everything stored on the entry except the OAuth token.
+
+    An OAuth access token lasts one hour and the refreshed one is written to the entry:
+    that must not restart the integration every hour.
+    """
+    data = {k: v for k, v in entry.data.items() if k != "token"}
+    subentries = {
+        sub_id: (sub.subentry_type, sub.unique_id, sub.title, dict(sub.data))
+        for sub_id, sub in entry.subentries.items()
+    }
+    return (data, dict(entry.options), subentries, entry.title)
+
+
 async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Reload config entry after options update."""
+    """Reload the entry when its configuration changed (not when its token was refreshed)."""
+    current = hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get("config_signature")
+    if current is not None and current == _config_signature(entry):
+        return
     await hass.config_entries.async_reload(entry.entry_id)

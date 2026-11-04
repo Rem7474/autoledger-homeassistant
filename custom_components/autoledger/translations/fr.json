@@ -3,20 +3,18 @@
     "step": {
       "user": {
         "title": "Connexion à AutoLedger",
-        "description": "Renseignez l'URL de votre serveur AutoLedger et votre jeton d'accès personnel.",
-        "data": {
-          "host": "URL du serveur",
-          "api_key": "Jeton API (Token)",
-          "verify_ssl": "Vérifier le certificat SSL"
+        "description": "Autorisez Home Assistant depuis votre compte AutoLedger, ou collez un jeton d'API.",
+        "menu_options": {
+          "oauth": "Autoriser dans AutoLedger (recommandé)",
+          "token": "Utiliser un jeton d'API"
         }
       },
       "reconfigure": {
         "title": "Reconfigurer AutoLedger",
-        "description": "Mettez à jour les informations de connexion à votre serveur AutoLedger.",
-        "data": {
-          "host": "URL du serveur",
-          "api_key": "Jeton API (Token)",
-          "verify_ssl": "Vérifier le certificat SSL"
+        "description": "Changez le serveur et le jeton, ou passez à une autorisation depuis votre compte AutoLedger.",
+        "menu_options": {
+          "reconfigure_token": "Changer le serveur ou le jeton d'API",
+          "oauth": "Autoriser dans AutoLedger (OAuth)"
         }
       },
       "reauth_confirm": {
@@ -25,18 +23,54 @@
         "data": {
           "api_key": "Jeton d'API"
         }
+      },
+      "oauth": {
+        "title": "Autoriser Home Assistant",
+        "description": "Saisissez l'adresse de votre serveur AutoLedger. Vous serez redirigé vers AutoLedger pour approuver l'accès ; cochez la case qui permet à Home Assistant d'enregistrer les charges, les relevés d'odomètre et les trajets. Le serveur doit avoir activé OAuth.",
+        "data": {
+          "host": "URL du serveur",
+          "verify_ssl": "Vérifier le certificat SSL"
+        }
+      },
+      "token": {
+        "title": "Connexion avec un jeton d'API",
+        "description": "Renseignez l'URL de votre serveur AutoLedger et votre jeton d'API.",
+        "data": {
+          "host": "URL du serveur",
+          "api_key": "Jeton API (Token)",
+          "verify_ssl": "Vérifier le certificat SSL"
+        }
+      },
+      "reconfigure_token": {
+        "title": "Reconfigurer AutoLedger",
+        "description": "Mettez à jour les informations de connexion à votre serveur AutoLedger.",
+        "data": {
+          "host": "URL du serveur",
+          "api_key": "Jeton API (Token)",
+          "verify_ssl": "Vérifier le certificat SSL"
+        }
+      },
+      "reauth_oauth": {
+        "title": "Réautoriser AutoLedger",
+        "description": "AutoLedger sur {host} a mis fin à l'accès de Home Assistant (autorisation supprimée, ou inutilisée depuis 90 jours). Validez pour l'approuver à nouveau dans AutoLedger."
       }
     },
     "error": {
       "cannot_connect": "Échec de connexion au serveur AutoLedger. Vérifiez l'URL de l'hôte.",
       "invalid_auth": "Authentification refusée. Veuillez vérifier votre jeton API.",
       "unknown": "Une erreur inattendue est survenue.",
-      "invalid_scope": "Ce jeton ne peut pas envoyer de données à AutoLedger. Créez un jeton d'API de scope « ingest » ou « homeassistant »."
+      "invalid_scope": "Ce jeton ne peut pas envoyer de données à AutoLedger. Créez un jeton d'API de scope « ingest » ou « homeassistant ».",
+      "oauth_unavailable": "Ce serveur ne propose pas OAuth pour Home Assistant : il est désactivé par défaut sur l'instance AutoLedger. Utilisez plutôt un jeton d'API.",
+      "no_url_available": "Home Assistant n'a pas d'adresse vers laquelle AutoLedger puisse vous renvoyer. Activez My Home Assistant ou renseignez l'URL externe."
     },
     "abort": {
       "already_configured": "Cette instance AutoLedger est déjà configurée.",
       "reconfigure_successful": "Connexion à AutoLedger mise à jour avec succès.",
-      "reauth_successful": "Réauthentification réussie."
+      "reauth_successful": "Réauthentification réussie.",
+      "oauth_failed": "AutoLedger a refusé de donner un jeton d'accès à Home Assistant. Réessayez.",
+      "oauth_scope_not_granted": "L'accès a été approuvé sans la case qui permet à Home Assistant d'enregistrer les charges, les relevés d'odomètre et les trajets. Autorisez à nouveau en la cochant.",
+      "user_rejected_authorize": "L'autorisation a été refusée ({error}).",
+      "cannot_connect": "Échec de connexion au serveur AutoLedger. Vérifiez l'URL de l'hôte."
     }
   },
   "config_subentries": {

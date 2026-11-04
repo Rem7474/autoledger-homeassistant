@@ -42,6 +42,10 @@ async def test_user_flow_creates_the_entry(hass: HomeAssistant) -> None:
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER}
         )
+        assert result["type"] is FlowResultType.MENU
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"next_step_id": "token"}
+        )
         assert result["type"] is FlowResultType.FORM
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"], {CONF_HOST: HOST + "/", CONF_API_KEY: "al_live_x"}
@@ -58,6 +62,9 @@ async def test_user_flow_refuses_a_read_only_token(hass: HomeAssistant) -> None:
     with patch(VALIDATE, new=AsyncMock(side_effect=AutoLedgerScopeError("read"))):
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"next_step_id": "token"}
         )
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"], {CONF_HOST: HOST, CONF_API_KEY: "al_live_x"}
@@ -105,6 +112,10 @@ async def test_reconfigure_moves_the_unique_id_with_the_host(hass: HomeAssistant
         patch(METRICS, new=AsyncMock(return_value={})),
     ):
         result = await entry.start_reconfigure_flow(hass)
+        assert result["type"] is FlowResultType.MENU
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"next_step_id": "reconfigure_token"}
+        )
         assert result["type"] is FlowResultType.FORM
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"], {CONF_HOST: "https://New.Example/", CONF_API_KEY: "k"}
