@@ -30,3 +30,23 @@ jobs:
       - name: Run test suite with pytest
         run: |
           pytest --cov=custom_components.autoledger --cov-report=term-missing
+
+  pytest-homeassistant:
+    name: Pytest (real Home Assistant core)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          pip install --only-binary :all: --no-binary lru-dict,mock-open,pyric --require-hashes --no-deps -r tests_ha/requirements.txt
+
+      - name: Run the tests against Home Assistant
+        run: |
+          pytest tests_ha
