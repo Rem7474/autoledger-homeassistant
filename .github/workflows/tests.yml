@@ -45,9 +45,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          # Home Assistant's own dependency set, pinned through the plugin version.
-          # Several of its packages ship no wheel for this interpreter, so wheels cannot be enforced.
-          pip install -r tests_ha/requirements.txt # NOSONAR
+          pip install --require-hashes --no-deps -r tests_ha/requirements.txt
 
       - name: Run the tests against Home Assistant
         run: |
