@@ -125,10 +125,7 @@ class AutoLedgerApiClient:
                 if response.status in (401, 403):
                     error_text = await response.text()
                     _LOGGER.warning(
-                        "Authentication error calling %s: HTTP %s - %s",
-                        url,
-                        response.status,
-                        error_text,
+                        "Authentication error calling %s: HTTP %s", endpoint, response.status
                     )
                     raise AutoLedgerAuthError(
                         f"Authentication failed (HTTP {response.status}): {error_text}"
@@ -142,10 +139,7 @@ class AutoLedgerApiClient:
                 if response.status >= 400:
                     error_text = await response.text()
                     _LOGGER.error(
-                        "AutoLedger API returned error HTTP %s for %s: %s",
-                        response.status,
-                        url,
-                        error_text,
+                        "AutoLedger API returned error HTTP %s for %s", response.status, endpoint
                     )
                     raise AutoLedgerApiError(
                         f"API Error (HTTP {response.status}): {error_text}",
@@ -162,12 +156,12 @@ class AutoLedgerApiClient:
             aiohttp.ClientOSError,
             aiohttp.ServerDisconnectedError,
         ) as err:
-            _LOGGER.error("Cannot connect to AutoLedger at %s: %s", url, err)
+            _LOGGER.error("Cannot connect to AutoLedger: %s", type(err).__name__)
             raise AutoLedgerConnectionError(
                 f"Failed to connect to AutoLedger at {url}: {err}"
             ) from err
         except TimeoutError as err:
-            _LOGGER.error("Timeout connecting to AutoLedger at %s", url)
+            _LOGGER.error("Timeout connecting to AutoLedger")
             raise AutoLedgerTimeoutError(
                 f"Timeout after {DEFAULT_TIMEOUT}s connecting to AutoLedger at {url}"
             ) from err
