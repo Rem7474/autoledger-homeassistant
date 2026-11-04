@@ -8,6 +8,8 @@ DOMAIN = "autoledger"
 CONF_HOST = "host"
 CONF_API_KEY = "api_key"
 CONF_VERIFY_SSL = "verify_ssl"
+CONF_AUTH_METHOD = "auth_method"
+AUTH_METHOD_TOKEN = "token"
 CONF_VEHICLES = "vehicles"
 CONF_CHARGERS = "chargers"
 

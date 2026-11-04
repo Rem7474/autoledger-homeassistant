@@ -32,6 +32,7 @@ def _entry(**data) -> MockConfigEntry:
     return MockConfigEntry(
         domain=DOMAIN,
         unique_id=HOST,
+        version=2,
         data={CONF_HOST: HOST, CONF_API_KEY: "old", CONF_VERIFY_SSL: True, **data},
     )
 

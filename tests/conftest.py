@@ -297,6 +297,16 @@ if "homeassistant" not in sys.modules:
             def async_abort(self, reason):
                 return {"type": "abort", "reason": reason}
 
+        class ConfigSubentry:
+            def __init__(self, data=None, subentry_type="", title="", unique_id=None):
+                self.data = data or {}
+                self.subentry_type = subentry_type
+                self.title = title
+                self.unique_id = unique_id
+
+        class ConfigSubentryFlow:
+            """Placeholder: subentry flows are exercised against the real core in tests_ha."""
+
         class ConfigEntry:
             def __init__(
                 self,
@@ -305,6 +315,8 @@ if "homeassistant" not in sys.modules:
                 title="AutoLedger",
                 data=None,
                 options=None,
+                vehicles=None,
+                chargers=None,
             ):
                 self.entry_id = entry_id
                 self.domain = domain
@@ -313,6 +325,20 @@ if "homeassistant" not in sys.modules:
                 self.unique_id = None
                 self.data = data or {}
                 self.options = options or {}
+                # vehicles={id: settings} / chargers={id: settings} become subentries
+                self.subentries = {}
+                for kind, id_key, items in (
+                    ("vehicle", "vehicle_id", vehicles or {}),
+                    ("charger", "charger_id", chargers or {}),
+                ):
+                    for item_id, conf in items.items():
+                        key = f"{kind}:{item_id}"
+                        self.subentries[key] = ConfigSubentry(
+                            data={**conf, id_key: item_id},
+                            subentry_type=kind,
+                            title=str(item_id),
+                            unique_id=key,
+                        )
                 self.runtime_data = None
                 self._update_listeners = []
 
@@ -326,6 +352,9 @@ if "homeassistant" not in sys.modules:
         ha.config_entries.ConfigFlow = ConfigFlow
         ha.config_entries.OptionsFlow = OptionsFlow
         ha.config_entries.ConfigEntry = ConfigEntry
+        ha.config_entries.ConfigSubentry = ConfigSubentry
+        ha.config_entries.ConfigSubentryFlow = ConfigSubentryFlow
+        ha.config_entries.SubentryFlowResult = dict[str, Any]
         ha.data_entry_flow.FlowResult = dict[str, Any]
 
         # Selectors

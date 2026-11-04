@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
+from homeassistant.config_entries import ConfigSubentryData
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -12,10 +13,10 @@ from custom_components.autoledger.const import (
     CONF_HOST,
     CONF_VEHICLE_ID,
     CONF_VEHICLE_NAME,
-    CONF_VEHICLES,
     CONF_VERIFY_SSL,
     DOMAIN,
 )
+from custom_components.autoledger.subentries import SUBENTRY_VEHICLE
 
 API = "custom_components.autoledger.api.AutoLedgerApiClient"
 HOST = "http://autoledger.local:8080"
@@ -82,10 +83,16 @@ def _entry() -> MockConfigEntry:
     return MockConfigEntry(
         domain=DOMAIN,
         unique_id=HOST,
+        version=2,
         data={CONF_HOST: HOST, CONF_API_KEY: "k", CONF_VERIFY_SSL: True},
-        options={
-            CONF_VEHICLES: {"v1": {CONF_VEHICLE_ID: "v1", CONF_VEHICLE_NAME: "Family"}},
-        },
+        subentries_data=[
+            ConfigSubentryData(
+                data={CONF_VEHICLE_ID: "v1", CONF_VEHICLE_NAME: "Family"},
+                subentry_type=SUBENTRY_VEHICLE,
+                title="Family",
+                unique_id="vehicle:v1",
+            )
+        ],
     )
 
 

@@ -14,7 +14,6 @@ from custom_components.autoledger.const import (
     CONF_HOST,
     CONF_ODOMETER_ENTITY,
     CONF_VEHICLE_NAME,
-    CONF_VEHICLES,
     DOMAIN,
 )
 from custom_components.autoledger.odometer_tracker import AutoLedgerOdometerTracker
@@ -80,11 +79,9 @@ async def test_button_setup_only_for_vehicles_with_odometer(mock_hass):
     entry = ConfigEntry(
         entry_id="e2",
         data={CONF_HOST: "h"},
-        options={
-            CONF_VEHICLES: {
-                "v1": {CONF_VEHICLE_NAME: "A", CONF_ODOMETER_ENTITY: "sensor.odo"},
-                "v2": {CONF_VEHICLE_NAME: "B"},
-            }
+        vehicles={
+            "v1": {CONF_VEHICLE_NAME: "A", CONF_ODOMETER_ENTITY: "sensor.odo"},
+            "v2": {CONF_VEHICLE_NAME: "B"},
         },
     )
     mock_hass.data[DOMAIN] = {
