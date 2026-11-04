@@ -275,6 +275,9 @@ if "homeassistant" not in sys.modules:
             def async_create_entry(self, title, data):
                 return {"type": "create_entry", "title": title, "data": data}
 
+            def async_abort(self, reason):
+                return {"type": "abort", "reason": reason}
+
         class ConfigEntry:
             def __init__(
                 self,
@@ -344,7 +347,9 @@ if "homeassistant" not in sys.modules:
             return kwargs
 
         def SelectSelector(config=None):
-            return MagicMock()
+            selector = MagicMock()
+            selector.config = config
+            return selector
 
         def NumberSelectorConfig(**kwargs):
             return kwargs

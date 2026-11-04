@@ -701,3 +701,140 @@ async def test_options_flow_remove_item_unified(mock_hass):
     rm_chg = await handler2.async_step_remove_item(user_input={"item_to_remove": "charger:c1"})
     assert rm_chg["type"] == "create_entry"
     assert "c1" not in rm_chg["data"][CONF_CHARGERS]
+
+
+def _options_handler(mock_hass, options=None):
+    entry = ConfigEntry(
+        entry_id="entry_guard",
+        data={CONF_HOST: "http://autoledger.local", CONF_API_KEY: "key"},
+        options=options or {},
+    )
+    handler = AutoLedgerOptionsFlowHandler(entry)
+    handler.hass = mock_hass
+    return handler
+
+
+@pytest.mark.asyncio
+async def test_add_vehicle_aborts_when_server_unreachable(mock_hass):
+    """An unreachable server must not offer a placeholder vehicle that could be saved."""
+    handler = _options_handler(mock_hass)
+
+    with patch.object(handler, "_get_api_client") as factory:
+        client = AsyncMock()
+        client.async_get_vehicles.side_effect = AutoLedgerConnectionError("down")
+        factory.return_value = client
+
+        result = await handler.async_step_add_vehicle(user_input=None)
+
+    assert result["type"] == "abort"
+    assert result["reason"] == "cannot_connect"
+
+
+@pytest.mark.asyncio
+async def test_add_vehicle_aborts_on_invalid_token(mock_hass):
+    """A rejected token is reported as such, not as a connection problem."""
+    handler = _options_handler(mock_hass)
+
+    with patch.object(handler, "_get_api_client") as factory:
+        client = AsyncMock()
+        client.async_get_vehicles.side_effect = AutoLedgerAuthError("revoked")
+        factory.return_value = client
+
+        result = await handler.async_step_add_vehicle(user_input=None)
+
+    assert result["type"] == "abort"
+    assert result["reason"] == "invalid_auth"
+
+
+@pytest.mark.asyncio
+async def test_add_vehicle_aborts_when_server_has_no_vehicle(mock_hass):
+    """A server without vehicles has nothing to add."""
+    handler = _options_handler(mock_hass)
+
+    with patch.object(handler, "_get_api_client") as factory:
+        client = AsyncMock()
+        client.async_get_vehicles.return_value = []
+        factory.return_value = client
+
+        result = await handler.async_step_add_vehicle(user_input=None)
+
+    assert result["type"] == "abort"
+    assert result["reason"] == "no_vehicle_available"
+
+
+@pytest.mark.asyncio
+async def test_add_vehicle_excludes_already_configured_vehicles(mock_hass):
+    """Adding a vehicle again would overwrite its mapping: it is not offered."""
+    handler = _options_handler(
+        mock_hass, {CONF_VEHICLES: {"v1": {CONF_VEHICLE_ID: "v1", CONF_VEHICLE_NAME: "Car 1"}}}
+    )
+    api_vehicles = [
+        {"id": "v1", "make": "Tesla", "model": "3", "name": "One"},
+        {"id": "v2", "make": "Renault", "model": "Zoe", "name": "Two"},
+    ]
+
+    with patch.object(handler, "_get_api_client") as factory:
+        client = AsyncMock()
+        client.async_get_vehicles.return_value = api_vehicles
+        factory.return_value = client
+
+        result = await handler.async_step_add_vehicle(user_input=None)
+
+    assert result["type"] == "form"
+    offered = [
+        opt["value"] for opt in next(iter(result["data_schema"].schema.values())).config["options"]
+    ]
+    assert offered == ["v2"]
+
+
+@pytest.mark.asyncio
+async def test_add_vehicle_aborts_when_every_vehicle_is_configured(mock_hass):
+    """When all server vehicles are already mapped there is nothing left to add."""
+    handler = _options_handler(
+        mock_hass, {CONF_VEHICLES: {"v1": {CONF_VEHICLE_ID: "v1", CONF_VEHICLE_NAME: "Car 1"}}}
+    )
+
+    with patch.object(handler, "_get_api_client") as factory:
+        client = AsyncMock()
+        client.async_get_vehicles.return_value = [{"id": "v1", "name": "One"}]
+        factory.return_value = client
+
+        result = await handler.async_step_add_vehicle(user_input=None)
+
+    assert result["type"] == "abort"
+    assert result["reason"] == "no_vehicle_available"
+
+
+@pytest.mark.asyncio
+async def test_charger_fixed_mode_rejects_a_vehicle_that_is_not_configured(mock_hass):
+    """A fixed vehicle must be one the integration knows (no leftover placeholder id)."""
+    handler = _options_handler(
+        mock_hass, {CONF_VEHICLES: {"v1": {CONF_VEHICLE_ID: "v1", CONF_VEHICLE_NAME: "Car 1"}}}
+    )
+
+    result = await handler.async_step_charger_step2(
+        user_input={
+            CONF_ASSIGNMENT_MODE: ASSIGNMENT_MODE_FIXED,
+            CONF_LINKED_VEHICLE_ID: "none",
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["errors"]["base"] == "select_vehicle"
+
+
+@pytest.mark.asyncio
+async def test_charger_assignment_options_are_translation_keys_only(mock_hass):
+    """Selector labels come from the translations, never from hardcoded English text."""
+    handler = _options_handler(mock_hass)
+
+    result = await handler.async_step_charger_step2(user_input=None)
+
+    config = next(iter(result["data_schema"].schema.values())).config
+    assert config["options"] == [
+        "fixed",
+        "input_select",
+        "correlation",
+        "unassigned",
+    ]
+    assert config["translation_key"] == "assignment_mode"
