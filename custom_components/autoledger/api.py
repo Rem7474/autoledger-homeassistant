@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import aiohttp
@@ -65,10 +66,17 @@ class AutoLedgerApiClient:
         api_key: str,
         session: aiohttp.ClientSession,
         verify_ssl: bool = True,
+        token_provider: Callable[[], Awaitable[str]] | None = None,
     ) -> None:
-        """Initialize the API client."""
+        """Initialize the API client.
+
+        ``token_provider`` replaces the static ``api_key`` when the credential changes
+        over time (an OAuth access token lasts one hour): it is awaited before every
+        request and returns the token to send.
+        """
         self._host = host.rstrip("/")
         self._api_key = api_key
+        self._token_provider = token_provider
         self._session = session
         self._verify_ssl = verify_ssl
 
@@ -77,10 +85,10 @@ class AutoLedgerApiClient:
         """Return the host."""
         return self._host
 
-    def _get_headers(self) -> dict[str, str]:
+    def _get_headers(self, token: str | None = None) -> dict[str, str]:
         """Return request headers with Bearer token authentication."""
         return {
-            "Authorization": f"Bearer {self._api_key}",
+            "Authorization": f"Bearer {token if token is not None else self._api_key}",
             "Accept": "application/json",
             "Content-Type": "application/json",
         }
@@ -93,7 +101,8 @@ class AutoLedgerApiClient:
     ) -> Any:
         """Execute an asynchronous HTTP request."""
         url = f"{self._host}{endpoint}"
-        headers = self._get_headers()
+        token = await self._token_provider() if self._token_provider else None
+        headers = self._get_headers(token)
 
         if "headers" in kwargs:
             headers.update(kwargs.pop("headers"))

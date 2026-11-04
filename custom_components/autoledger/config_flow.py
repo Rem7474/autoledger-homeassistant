@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from collections.abc import Mapping
 from typing import Any
 
@@ -14,9 +15,10 @@ from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.config_entries import SubentryFlowResult
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers import config_entry_oauth2_flow, selector
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.network import NoURLAvailableError
 
 from .api import (
     AutoLedgerApiClient,
@@ -29,10 +31,12 @@ from .const import (
     ASSIGNMENT_MODE_FIXED,
     ASSIGNMENT_MODE_INPUT_SELECT,
     ASSIGNMENT_MODES,
+    AUTH_METHOD_OAUTH,
     AUTH_METHOD_TOKEN,
     CONF_API_KEY,
     CONF_ASSIGNMENT_MODE,
     CONF_AUTH_METHOD,
+    CONF_AUTHORIZE_URL,
     CONF_BATTERY_SOC_ENTITY,
     CONF_CHARGER_ID,
     CONF_CHARGER_NAME,
@@ -45,6 +49,7 @@ from .const import (
     CONF_HOST,
     CONF_LINKED_VEHICLE_ID,
     CONF_ODOMETER_ENTITY,
+    CONF_TOKEN_URL,
     CONF_TRIP_LOCATION_ENTITY,
     CONF_TRIP_MOVING_ENTITY,
     CONF_VEHICLE_ID,
@@ -61,6 +66,14 @@ from .const import (
     ENERGY_METER_TYPES,
     MAX_DEBOUNCE_SECONDS,
     MIN_DEBOUNCE_SECONDS,
+)
+from .oauth import (
+    AutoLedgerOAuth2Implementation,
+    OAuthUnavailableError,
+    async_discover,
+    async_register_client,
+    build_client,
+    oauth_entry_data,
 )
 from .subentries import (
     SUBENTRY_CHARGER,
@@ -241,8 +254,19 @@ class AutoLedgerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 2
 
+    def __init__(self) -> None:
+        """Initialize the flow."""
+        self._oauth: dict[str, Any] = {}
+        self._external_data: dict[str, Any] = {}
+
+    # ------------------------------------------------------------------ first connection
+
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        """Handle the initial user step."""
+        """Choose how to connect: authorize in the browser, or paste an API token."""
+        return self.async_show_menu(step_id="user", menu_options=["oauth", "token"])
+
+    async def async_step_token(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Connect with an API token."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -269,12 +293,177 @@ class AutoLedgerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors["base"] = error
 
         return self.async_show_form(
-            step_id="user",
+            step_id="token",
             data_schema=_connection_schema(),
             errors=errors,
         )
 
+    # ------------------------------------------------------------------ OAuth connection
+
+    async def async_step_oauth(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Ask for the server, then send the user to AutoLedger to authorize Home Assistant."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            host = user_input[CONF_HOST].rstrip("/")
+            verify_ssl = user_input.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
+
+            if self.source == config_entries.SOURCE_USER:
+                await self.async_set_unique_id(host.lower())
+                self._abort_if_unique_id_configured()
+            elif self._another_entry_uses(host, self._current_entry()):
+                return self.async_abort(reason="already_configured")
+
+            error = await self._async_prepare_oauth(host, verify_ssl)
+            if error is None:
+                return await self.async_step_auth()
+            errors["base"] = error
+
+        entry = self._current_entry()
+        return self.async_show_form(
+            step_id="oauth",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_HOST,
+                        **({"default": entry.data[CONF_HOST]} if entry else {}),
+                    ): selector.TextSelector(
+                        selector.TextSelectorConfig(type=selector.TextSelectorType.URL)
+                    ),
+                    vol.Optional(
+                        CONF_VERIFY_SSL,
+                        default=entry.data.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
+                        if entry
+                        else DEFAULT_VERIFY_SSL,
+                    ): selector.BooleanSelector(),
+                }
+            ),
+            errors=errors,
+        )
+
+    def _current_entry(self) -> config_entries.ConfigEntry | None:
+        """The entry being reconfigured or re-authenticated, if any."""
+        if self.source == config_entries.SOURCE_RECONFIGURE:
+            return self._get_reconfigure_entry()
+        if self.source == config_entries.SOURCE_REAUTH:
+            return self._get_reauth_entry()
+        return None
+
+    def _another_entry_uses(self, host: str, current: config_entries.ConfigEntry | None) -> bool:
+        """Whether an entry other than the one being edited already uses this server."""
+        return any(
+            (current is None or other.entry_id != current.entry_id)
+            and other.unique_id == host.lower()
+            for other in self._async_current_entries()
+        )
+
+    async def _async_prepare_oauth(self, host: str, verify_ssl: bool) -> str | None:
+        """Discover the server and register Home Assistant. Returns an error key, or None."""
+        try:
+            endpoints = await async_discover(self.hass, host, verify_ssl)
+            redirect_uri = config_entry_oauth2_flow.async_get_redirect_uri(self.hass)
+            client_id = await async_register_client(
+                self.hass, endpoints["registration_endpoint"], redirect_uri, verify_ssl
+            )
+        except AutoLedgerConnectionError:
+            return "cannot_connect"
+        except OAuthUnavailableError as err:
+            _LOGGER.warning("OAuth is not available on %s: %s", host, err)
+            return "oauth_unavailable"
+        except (NoURLAvailableError, RuntimeError):
+            return "no_url_available"
+
+        self._oauth = {
+            "host": host,
+            "verify_ssl": verify_ssl,
+            "endpoints": endpoints,
+            "client_id": client_id,
+            "implementation": AutoLedgerOAuth2Implementation(
+                self.hass,
+                client_id,
+                endpoints[CONF_AUTHORIZE_URL],
+                endpoints[CONF_TOKEN_URL],
+                verify_ssl,
+            ),
+        }
+        return None
+
+    async def async_step_auth(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Send the user to AutoLedger, then take the answer of the redirect."""
+        if user_input is not None:
+            self._external_data = user_input
+            next_step = "authorize_rejected" if "error" in user_input else "creation"
+            return self.async_external_step_done(next_step_id=next_step)
+
+        url = await self._oauth["implementation"].async_generate_authorize_url(self.flow_id)
+        return self.async_external_step(step_id="auth", url=url)
+
+    async def async_step_authorize_rejected(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """The user refused, or AutoLedger refused the request."""
+        return self.async_abort(
+            reason="user_rejected_authorize",
+            description_placeholders={"error": str(self._external_data.get("error", ""))},
+        )
+
+    async def async_step_creation(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Trade the authorization code for tokens, check them, and store the connection."""
+        oauth = self._oauth
+        try:
+            token = await oauth["implementation"].async_resolve_external_data(self._external_data)
+        except AutoLedgerConnectionError:
+            return self.async_abort(reason="cannot_connect")
+        except AutoLedgerAuthError:
+            return self.async_abort(reason="oauth_failed")
+
+        try:
+            token["expires_in"] = int(token["expires_in"])
+        except (KeyError, TypeError, ValueError):
+            return self.async_abort(reason="oauth_failed")
+        token["expires_at"] = time.time() + token["expires_in"]
+
+        error, _account = await _async_validate_credentials(
+            self.hass, oauth["host"], token["access_token"], oauth["verify_ssl"]
+        )
+        if error == "invalid_scope":
+            # The consent page grants the scope only when its box is ticked.
+            return self.async_abort(reason="oauth_scope_not_granted")
+        if error is not None:
+            return self.async_abort(reason=error)
+
+        data = {
+            **oauth_entry_data(
+                oauth["host"], oauth["verify_ssl"], oauth["endpoints"], oauth["client_id"], token
+            ),
+            CONF_AUTH_METHOD: AUTH_METHOD_OAUTH,
+        }
+        entry = self._current_entry()
+        if entry is None:
+            return self.async_create_entry(title=f"AutoLedger ({oauth['host']})", data=data)
+
+        # The static token, if the entry had one, is replaced by the OAuth connection.
+        return self.async_update_reload_and_abort(
+            entry,
+            unique_id=oauth["host"].lower(),
+            data={k: v for k, v in entry.data.items() if k != CONF_API_KEY} | data,
+        )
+
+    # ------------------------------------------------------------------ reconfigure
+
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Change the connection: its server and token, or switch to OAuth."""
+        entry = self._get_reconfigure_entry()
+        if entry.data.get(CONF_AUTH_METHOD) == AUTH_METHOD_OAUTH:
+            # Nothing to type for an OAuth connection but the server: authorize again.
+            return await self.async_step_oauth()
+        return self.async_show_menu(
+            step_id="reconfigure", menu_options=["reconfigure_token", "oauth"]
+        )
+
+    async def async_step_reconfigure_token(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
         """Handle reconfiguration of the integration connection."""
         errors: dict[str, str] = {}
         entry = self._get_reconfigure_entry()
@@ -285,10 +474,7 @@ class AutoLedgerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             verify_ssl = user_input.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
             unique_id = host.lower()
 
-            if any(
-                other.entry_id != entry.entry_id and other.unique_id == unique_id
-                for other in self._async_current_entries()
-            ):
+            if self._another_entry_uses(host, entry):
                 return self.async_abort(reason="already_configured")
 
             error, _account = await _async_validate_credentials(
@@ -307,7 +493,7 @@ class AutoLedgerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors["base"] = error
 
         return self.async_show_form(
-            step_id="reconfigure",
+            step_id="reconfigure_token",
             data_schema=_connection_schema(
                 entry.data.get(CONF_HOST),
                 entry.data.get(CONF_API_KEY),
@@ -316,9 +502,34 @@ class AutoLedgerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
+    # ------------------------------------------------------------------ re-authentication
+
     async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> FlowResult:
-        """Start re-authentication when the server stops accepting the token."""
+        """Start re-authentication when the server stops accepting the credentials."""
+        if entry_data.get(CONF_AUTH_METHOD) == AUTH_METHOD_OAUTH:
+            return await self.async_step_reauth_oauth()
         return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_oauth(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Authorize Home Assistant again after AutoLedger ended the grant."""
+        errors: dict[str, str] = {}
+        entry = self._get_reauth_entry()
+        host = entry.data[CONF_HOST]
+
+        if user_input is not None:
+            error = await self._async_prepare_oauth(
+                host, entry.data.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
+            )
+            if error is None:
+                return await self.async_step_auth()
+            errors["base"] = error
+
+        return self.async_show_form(
+            step_id="reauth_oauth",
+            data_schema=vol.Schema({}),
+            errors=errors,
+            description_placeholders={"host": host},
+        )
 
     async def async_step_reauth_confirm(
         self, user_input: dict[str, Any] | None = None
@@ -359,16 +570,6 @@ class AutoLedgerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> dict[str, type[config_entries.ConfigSubentryFlow]]:
         """Vehicles and charging stations are subentries of the connection."""
         return {SUBENTRY_VEHICLE: VehicleSubentryFlow, SUBENTRY_CHARGER: ChargerSubentryFlow}
-
-
-def _api_client(hass: Any, entry: config_entries.ConfigEntry) -> AutoLedgerApiClient:
-    """Build a client from the connection settings of a config entry."""
-    return AutoLedgerApiClient(
-        host=entry.data[CONF_HOST],
-        api_key=entry.data[CONF_API_KEY],
-        session=async_get_clientsession(hass),
-        verify_ssl=entry.data.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
-    )
 
 
 def _vehicle_label(vehicle: Mapping[str, Any]) -> str:
@@ -433,7 +634,7 @@ class VehicleSubentryFlow(config_entries.ConfigSubentryFlow):
         """Pick the AutoLedger vehicle to add and, optionally, its Home Assistant device."""
         entry = self._get_entry()
         try:
-            vehicles = await _api_client(self.hass, entry).async_get_vehicles()
+            vehicles = await build_client(self.hass, entry).async_get_vehicles()
         except AutoLedgerAuthError:
             return self.async_abort(reason="invalid_auth")
         except Exception as err:  # noqa: BLE001 - any failure means the server is unusable now

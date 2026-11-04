@@ -103,11 +103,13 @@ flowchart TD
 
 1. In Home Assistant, navigate to **Settings** > **Devices & Services**.
 2. Click **+ Add Integration** and search for **AutoLedger**.
-3. Fill in your server details:
-   - **Server URL**: The base URL of your AutoLedger instance (e.g., `http://192.168.1.100:8080` or `https://autoledger.yourdomain.com`).
-   - **API Token**: An AutoLedger API token created in *Account > API tokens* with the **`homeassistant`** scope (or `ingest`). A `read` or `write` token is refused at this step because it cannot send charges, odometer readings or trips.
+3. Choose how to connect:
+   - **Authorize in AutoLedger (recommended)**: enter the **Server URL**, then Home Assistant sends you to AutoLedger, where you sign in and approve the access. Tick the box that lets Home Assistant record charges, odometer readings and trips; without it the access is read-only and the connection is refused. Nothing is copied by hand, the access renews itself, and you can end it from the API tokens list of your AutoLedger account. This needs OAuth enabled on the server (`AUTOLEDGER_MCP_ENABLED=true` or `AUTOLEDGER_OAUTH_ENABLED=true`) and an address AutoLedger can send you back to: [My Home Assistant](https://my.home-assistant.io/) (part of the default configuration) is used for that.
+   - **Use an API token**: enter the **Server URL** and an API token created in *Account > API tokens* with the **`homeassistant`** scope (or `ingest`). A `read` or `write` token is refused at this step because it cannot send charges, odometer readings or trips.
    - **Verify SSL Certificate**: Enable or disable according to your local setup.
-4. Click **Submit**. The integration validates the connection and the token scope immediately. If AutoLedger later stops accepting the token (revoked, expired), Home Assistant shows a **Re-authenticate** prompt on the integration card; enter a new token there.
+4. The integration validates the connection and the scope immediately. If AutoLedger later stops accepting the credentials (token revoked, authorization deleted or unused for 90 days), Home Assistant shows a **Re-authenticate** prompt on the integration card.
+
+To move an existing token connection to OAuth, use **Reconfigure** on the integration card and choose **Authorize in AutoLedger**: vehicles, charging stations and entities are kept.
 
 ### 2. Add vehicles (🚗 subentries)
 

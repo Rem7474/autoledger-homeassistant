@@ -88,6 +88,10 @@ if "homeassistant" not in sys.modules:
         ha.helpers.config_validation = ModuleType("homeassistant.helpers.config_validation")
         ha.helpers.aiohttp_client = ModuleType("homeassistant.helpers.aiohttp_client")
         ha.helpers.storage = ModuleType("homeassistant.helpers.storage")
+        ha.helpers.network = ModuleType("homeassistant.helpers.network")
+        ha.helpers.config_entry_oauth2_flow = ModuleType(
+            "homeassistant.helpers.config_entry_oauth2_flow"
+        )
         ha.config_entries = ModuleType("homeassistant.config_entries")
         ha.data_entry_flow = ModuleType("homeassistant.data_entry_flow")
         ha.components = ModuleType("homeassistant.components")
@@ -471,6 +475,36 @@ if "homeassistant" not in sys.modules:
         )
         ha.helpers.entity_registry.async_entries_for_device = er_async_entries_for_device
 
+        # OAuth: the connection flows run against the real core in tests_ha
+        class NoURLAvailableError(Exception):
+            pass
+
+        class LocalOAuth2ImplementationWithPkce:
+            def __init__(self, hass, domain, client_id, authorize_url, token_url, *args, **kw):
+                self.hass = hass
+                self.client_id = client_id
+                self.authorize_url = authorize_url
+                self.token_url = token_url
+
+            @property
+            def extra_authorize_data(self):
+                return {}
+
+        class OAuth2Session:
+            def __init__(self, hass, config_entry, implementation):
+                self.token = config_entry.data.get("token", {})
+
+            async def async_ensure_token_valid(self):
+                return None
+
+        ha.helpers.network.NoURLAvailableError = NoURLAvailableError
+        oauth_mod = ha.helpers.config_entry_oauth2_flow
+        oauth_mod.LocalOAuth2ImplementationWithPkce = LocalOAuth2ImplementationWithPkce
+        oauth_mod.OAuth2Session = OAuth2Session
+        oauth_mod.async_get_redirect_uri = lambda hass: (
+            "https://my.home-assistant.io/redirect/oauth"
+        )
+
         # diagnostics
         def async_redact_data(data, to_redact):
             return {k: "***REDACTED***" if k in to_redact else v for k, v in data.items()}
@@ -494,6 +528,10 @@ if "homeassistant" not in sys.modules:
         sys.modules["homeassistant.helpers.config_validation"] = ha.helpers.config_validation
         sys.modules["homeassistant.helpers.aiohttp_client"] = ha.helpers.aiohttp_client
         sys.modules["homeassistant.helpers.storage"] = ha.helpers.storage
+        sys.modules["homeassistant.helpers.network"] = ha.helpers.network
+        sys.modules["homeassistant.helpers.config_entry_oauth2_flow"] = (
+            ha.helpers.config_entry_oauth2_flow
+        )
         sys.modules["homeassistant.config_entries"] = ha.config_entries
         sys.modules["homeassistant.data_entry_flow"] = ha.data_entry_flow
         sys.modules["homeassistant.components"] = ha.components
