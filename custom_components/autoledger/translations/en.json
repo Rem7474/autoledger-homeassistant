@@ -197,5 +197,11 @@
       "name": "Log Trip",
       "description": "Manually log a trip with its start and end position. The distance comes from the odometer values."
     }
+  },
+  "issues": {
+    "server_too_old": {
+      "title": "AutoLedger server is too old",
+      "description": "The AutoLedger server is version {version}, and the integration reads figures that need version {minimum} or later. Reminders, costs and consumption may be missing. Update the AutoLedger server."
+    }
   }
 }

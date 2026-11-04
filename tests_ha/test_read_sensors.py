@@ -203,3 +203,30 @@ async def test_no_data_gaps_sensor_for_an_ingest_only_token(hass: HomeAssistant)
 
     assert hass.states.get("binary_sensor.family_data_gaps") is None
     assert _state(hass, "cost_per_km") is None
+
+
+async def test_an_old_server_raises_a_repair_issue_until_it_is_updated(hass: HomeAssistant) -> None:
+    from homeassistant.helpers import issue_registry as ir
+
+    entry = await _setup(hass, {"scope": "homeassistant", "server_version": "v1.59.1"})
+    issue_id = f"server_too_old_{entry.entry_id}"
+
+    issue = ir.async_get(hass).async_get_issue(DOMAIN, issue_id)
+    assert issue is not None
+    assert issue.translation_placeholders == {"version": "v1.59.1", "minimum": "1.61.0"}
+
+    # a build from the sources ("dev") or a recent release clears it
+    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    with (
+        patch(f"{API}.async_get_vehicles", new=AsyncMock(return_value=VEHICLES)),
+        patch(f"{API}.async_get_vehicle_metrics", new=AsyncMock(return_value={})),
+        patch(
+            f"{API}.async_get_account",
+            new=AsyncMock(return_value={"scope": "homeassistant", "server_version": "v1.61.0"}),
+        ),
+        patch(f"{API}.async_get_fleet_reminders", new=AsyncMock(return_value=FLEET_REMINDERS)),
+        patch(f"{API}.async_get_monthly_costs", new=AsyncMock(return_value=MONTHLY)),
+        patch(f"{API}.async_get_summary", new=AsyncMock(return_value=SUMMARY)),
+    ):
+        await coordinator.async_refresh()
+    assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is None

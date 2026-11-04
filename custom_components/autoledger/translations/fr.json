@@ -197,5 +197,11 @@
       "name": "Enregistrer un trajet",
       "description": "Enregistre manuellement un trajet avec ses positions de départ et d'arrivée. La distance provient des valeurs d'odomètre."
     }
+  },
+  "issues": {
+    "server_too_old": {
+      "title": "Le serveur AutoLedger est trop ancien",
+      "description": "Le serveur AutoLedger est en version {version}, et l'intégration lit des chiffres qui demandent la version {minimum} ou plus récente. Les rappels, les coûts et les consommations peuvent manquer. Mettez à jour le serveur AutoLedger."
+    }
   }
 }

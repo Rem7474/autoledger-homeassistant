@@ -177,3 +177,13 @@ async def test_summary_is_keyed_by_vehicle_and_survives_an_older_server(mock_has
     data = await coordinator._async_update_data()
     assert data["summary"]["v1"]["data_gaps"] == 2
     assert data["read_access"] is True
+
+
+@pytest.mark.parametrize(
+    ("version", "expected"),
+    [("v1.61.0", (1, 61, 0)), ("1.9.12", (1, 9, 12)), ("dev", None), ("", None), (None, None)],
+)
+def test_parse_version(version, expected):
+    from custom_components.autoledger.coordinator import _parse_version
+
+    assert _parse_version(version) == expected
