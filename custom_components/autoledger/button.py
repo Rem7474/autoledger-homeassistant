@@ -26,7 +26,9 @@ async def async_setup_entry(
         if hasattr(entry, "runtime_data") and entry.runtime_data
         else hass.data[DOMAIN][entry.entry_id]
     )
-    odometer_tracker: AutoLedgerOdometerTracker = data["odometer_tracker"]
+    odometer_tracker: AutoLedgerOdometerTracker | None = data["odometer_tracker"]
+    if odometer_tracker is None:
+        return  # a read-only access sends nothing
     configured_vehicles: dict[str, Any] = vehicles_config(entry)
     coordinator = data["coordinator"]
 

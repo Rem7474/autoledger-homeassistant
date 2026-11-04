@@ -19,7 +19,7 @@ from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.autoledger.api import AutoLedgerApiClient, AutoLedgerScopeError
+from custom_components.autoledger.api import AutoLedgerApiClient
 from custom_components.autoledger.const import (
     AUTH_METHOD_OAUTH,
     AUTH_METHOD_TOKEN,
@@ -176,18 +176,17 @@ async def test_a_server_that_does_not_offer_the_scope_is_reported(
     assert not _calls(aioclient_mock, "POST", REGISTER)
 
 
-async def test_the_access_must_include_the_homeassistant_scope(
-    hass, hass_client_no_auth, aioclient_mock
-) -> None:
-    """The consent page gives `read` only unless the user ticks the recording box."""
+async def test_a_read_only_grant_is_accepted(hass, hass_client_no_auth, aioclient_mock) -> None:
+    """The consent page gives `read` unless the recording box is ticked: connect anyway."""
     _server(aioclient_mock)
     result = await _start_oauth(hass, hass_client_no_auth)
+    validate = AsyncMock(return_value={"scope": "read"})
 
-    with patch(VALIDATE, new=AsyncMock(side_effect=AutoLedgerScopeError("read"))):
+    with patch(VALIDATE, new=validate):
         result = await _authorize(hass, hass_client_no_auth, result)
 
-    assert result["type"] is FlowResultType.ABORT
-    assert result["reason"] == "oauth_scope_not_granted"
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    validate.assert_awaited_once_with(require_push=False)
 
 
 async def test_refusing_the_authorization_aborts(hass, hass_client_no_auth, aioclient_mock) -> None:

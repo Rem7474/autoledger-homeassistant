@@ -6,6 +6,7 @@ import logging
 
 import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 
 from .const import DOMAIN
@@ -97,7 +98,11 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         domain_data = hass.data.get(DOMAIN, {})
         handled = False
 
+        read_only_seen = False
         for _entry_id, data in domain_data.items():
+            if data.get("read_only"):
+                read_only_seen = True
+                continue
             trackers = data.get("trackers", {})
             if vehicle_id and vehicle_id in trackers:
                 tracker = trackers[vehicle_id]
@@ -134,6 +139,11 @@ async def async_setup_services(hass: HomeAssistant) -> None:
                 handled = True
                 break
 
+        if not handled and read_only_seen:
+            raise HomeAssistantError(
+                "The AutoLedger access is read-only: authorize again and tick the box that "
+                "lets Home Assistant record data"
+            )
         if not handled:
             _LOGGER.error("Cannot submit charge: No active AutoLedger client found")
 

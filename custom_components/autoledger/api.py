@@ -190,15 +190,16 @@ class AutoLedgerApiClient:
             await self._request("GET", f"{INTEGRATION_API}/vehicles")
             return {}
 
-    async def async_validate(self) -> dict[str, Any]:
-        """Check the credentials and that the token can push data.
+    async def async_validate(self, require_push: bool = True) -> dict[str, Any]:
+        """Check the credentials and, unless told otherwise, that the token can push data.
 
         Returns the account description; raises AutoLedgerAuthError for a token
-        the server refuses and AutoLedgerScopeError for a "read" or "write" one.
+        the server refuses and, when ``require_push`` is set, AutoLedgerScopeError
+        for a "read" or "write" one.
         """
         account = await self.async_get_account()
         scope = account.get("scope")
-        if scope and scope not in PUSH_TOKEN_SCOPES:
+        if require_push and scope and scope not in PUSH_TOKEN_SCOPES:
             raise AutoLedgerScopeError(str(scope))
         return account
 

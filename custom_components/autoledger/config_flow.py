@@ -207,7 +207,7 @@ def _validate_energy_sensor(hass: Any, entity_id: str | None) -> str | None:
 
 
 async def _async_validate_credentials(
-    hass: Any, host: str, api_key: str, verify_ssl: bool
+    hass: Any, host: str, api_key: str, verify_ssl: bool, require_push: bool = True
 ) -> tuple[str | None, dict[str, Any]]:
     """Check a host/token pair. Returns (error key or None, account description)."""
     client = AutoLedgerApiClient(
@@ -217,7 +217,7 @@ async def _async_validate_credentials(
         verify_ssl=verify_ssl,
     )
     try:
-        account = await client.async_validate()
+        account = await client.async_validate(require_push=require_push)
     except AutoLedgerAuthError:
         return "invalid_auth", {}
     except AutoLedgerScopeError:
@@ -423,12 +423,11 @@ class AutoLedgerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="oauth_failed")
         token["expires_at"] = time.time() + token["expires_in"]
 
+        # Without the "record" box ticked on the consent page the grant is read-only: the
+        # connection is kept, and the features that send data are off (with a repair issue).
         error, _account = await _async_validate_credentials(
-            self.hass, oauth["host"], token["access_token"], oauth["verify_ssl"]
+            self.hass, oauth["host"], token["access_token"], oauth["verify_ssl"], require_push=False
         )
-        if error == "invalid_scope":
-            # The consent page grants the scope only when its box is ticked.
-            return self.async_abort(reason="oauth_scope_not_granted")
         if error is not None:
             return self.async_abort(reason=error)
 
