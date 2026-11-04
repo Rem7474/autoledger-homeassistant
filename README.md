@@ -26,6 +26,9 @@ Connect your Home Assistant instance to AutoLedger to automatically detect EV ch
 - **Dedicated Vehicle & Charger Sensors**:
   - Vehicle: `sensor.<vehicle>_last_charge_cost`, `sensor.<vehicle>_cost_per_100km`
   - Charger: `sensor.<charger>_charging_state`, `sensor.<charger>_last_energy_kwh`, `sensor.<charger>_sync_status`
+- **Maintenance and cost sensors** (token with the `homeassistant` scope; not created for an `ingest`-only token):
+  - Vehicle: `sensor.<vehicle>_overdue_reminders`, `sensor.<vehicle>_reminders_due_soon` (the reminders are listed in the attributes), `sensor.<vehicle>_next_service_date`, `sensor.<vehicle>_next_service_distance`, `sensor.<vehicle>_cost_this_month` (with the split by category in the attributes)
+  - Account: `sensor.autoledger_charges_to_qualify` (charging sessions pushed from Home Assistant that no vehicle claimed yet)
 - **Native HA Services**:
   - `autoledger.sync`: Force an immediate synchronization with the AutoLedger server.
   - `autoledger.submit_charge`: Manually log or automate charging session submissions from HA scripts.

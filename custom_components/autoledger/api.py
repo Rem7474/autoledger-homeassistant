@@ -213,6 +213,16 @@ class AutoLedgerApiClient:
         res = await self._request("GET", f"{INTEGRATION_API}/vehicles/{vehicle_id}/metrics")
         return res if isinstance(res, dict) else {}
 
+    async def async_get_fleet_reminders(self) -> dict[str, Any]:
+        """Fetch the maintenance reminders of every vehicle the token sees (read API)."""
+        res = await self._request("GET", f"{READ_API}/reminders")
+        return res if isinstance(res, dict) else {}
+
+    async def async_get_monthly_costs(self, vehicle_id: str) -> dict[str, Any]:
+        """Fetch the month-by-month costs of a vehicle, the month in progress last (read API)."""
+        res = await self._request("GET", f"{READ_API}/vehicles/{vehicle_id}/monthly-costs")
+        return res if isinstance(res, dict) else {}
+
     async def async_post_event(self, event_data: dict[str, Any]) -> dict[str, Any]:
         """Post an event to the AutoLedger integration endpoint."""
         res = await self._request("POST", f"{INTEGRATION_API}/event", json=event_data)

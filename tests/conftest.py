@@ -185,6 +185,7 @@ if "homeassistant" not in sys.modules:
             DISTANCE = "distance"
             ENERGY = "energy"
             TIMESTAMP = "timestamp"
+            DATE = "date"
 
         class BinarySensorDeviceClass(StrEnum):
             BATTERY_CHARGING = "battery_charging"

@@ -77,6 +77,8 @@ READ_API = "/api/integrations/v1"
 
 # Token scopes able to push events (charges, odometer, trips); "read" and "write" cannot
 PUSH_TOKEN_SCOPES = ("ingest", "homeassistant")
+# Token scopes able to read the figures of the read API (costs, reminders)
+READ_TOKEN_SCOPES = ("read", "write", "homeassistant")
 
 EVENT_TYPE_CHARGING_SESSION_END = "charging_session_end"
 EVENT_TYPE_ODOMETER_UPDATE = "odometer_update"
