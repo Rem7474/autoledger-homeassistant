@@ -89,6 +89,10 @@ if "homeassistant" not in sys.modules:
         ha.helpers.aiohttp_client = ModuleType("homeassistant.helpers.aiohttp_client")
         ha.helpers.storage = ModuleType("homeassistant.helpers.storage")
         ha.helpers.network = ModuleType("homeassistant.helpers.network")
+        ha.helpers.issue_registry = ModuleType("homeassistant.helpers.issue_registry")
+        ha.helpers.issue_registry.async_create_issue = MagicMock()
+        ha.helpers.issue_registry.async_delete_issue = MagicMock()
+        ha.helpers.issue_registry.IssueSeverity = type("IssueSeverity", (), {"WARNING": "warning"})
         ha.helpers.config_entry_oauth2_flow = ModuleType(
             "homeassistant.helpers.config_entry_oauth2_flow"
         )
@@ -530,6 +534,7 @@ if "homeassistant" not in sys.modules:
         sys.modules["homeassistant.helpers.aiohttp_client"] = ha.helpers.aiohttp_client
         sys.modules["homeassistant.helpers.storage"] = ha.helpers.storage
         sys.modules["homeassistant.helpers.network"] = ha.helpers.network
+        sys.modules["homeassistant.helpers.issue_registry"] = ha.helpers.issue_registry
         sys.modules["homeassistant.helpers.config_entry_oauth2_flow"] = (
             ha.helpers.config_entry_oauth2_flow
         )

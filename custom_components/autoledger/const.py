@@ -114,6 +114,10 @@ ATTR_SESSION_START_TIME = "session_start_time"
 ATTR_DEBOUNCE_ACTIVE = "debounce_active"
 ATTR_ENERGY_START_KWH = "energy_start_kwh"
 
+# Oldest server with the whoami and summary routes of the read API
+MIN_SERVER_VERSION = (1, 61, 0)
+ISSUE_SERVER_TOO_OLD = "server_too_old"
+
 # Supported platforms
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,

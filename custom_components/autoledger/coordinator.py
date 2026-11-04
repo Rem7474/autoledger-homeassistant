@@ -3,17 +3,31 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import timedelta
 from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import AutoLedgerApiClient, AutoLedgerAuthError, AutoLedgerError
-from .const import DEFAULT_SCAN_INTERVAL_MINUTES, DOMAIN, READ_TOKEN_SCOPES
+from .const import (
+    DEFAULT_SCAN_INTERVAL_MINUTES,
+    DOMAIN,
+    ISSUE_SERVER_TOO_OLD,
+    MIN_SERVER_VERSION,
+    READ_TOKEN_SCOPES,
+)
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _parse_version(version: Any) -> tuple[int, int, int] | None:
+    """Return the (major, minor, patch) of a release such as "v1.61.0", None for "dev" or junk."""
+    match = re.match(r"v?(\d+)\.(\d+)\.(\d+)", str(version or ""))
+    return tuple(int(part) for part in match.groups()) if match else None  # type: ignore[return-value]
 
 
 class AutoLedgerDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -100,6 +114,7 @@ class AutoLedgerDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         try:
             account = await self.client.async_get_account()
+            self._check_server_version(account.get("server_version"))
             if self._read_access is None:
                 self._read_access = account.get("scope") in READ_TOKEN_SCOPES
             if not self._read_access:
@@ -153,3 +168,23 @@ class AutoLedgerDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except AutoLedgerError as err:
             _LOGGER.warning("Failed to read the AutoLedger figures: %s", err)
         return bool(self._read_access)
+
+    def _check_server_version(self, version: Any) -> None:
+        """Raise a repair issue while the server is older than the routes the integration reads."""
+        parsed = _parse_version(version)
+        issue_id = f"{ISSUE_SERVER_TOO_OLD}_{self.entry_id}"
+        if parsed is None or parsed >= MIN_SERVER_VERSION:
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+            return
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            issue_id,
+            is_fixable=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key=ISSUE_SERVER_TOO_OLD,
+            translation_placeholders={
+                "version": str(version),
+                "minimum": ".".join(str(part) for part in MIN_SERVER_VERSION),
+            },
+        )
