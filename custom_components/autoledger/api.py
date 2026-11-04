@@ -221,6 +221,15 @@ class AutoLedgerApiClient:
         res = await self._request("GET", f"{READ_API}/reminders")
         return res if isinstance(res, dict) else {}
 
+    async def async_get_summary(self) -> dict[str, Any]:
+        """Fetch the figures of every vehicle the token sees in one call (read API).
+
+        The server computes them vehicle by vehicle (about thirty queries each), so
+        callers poll it a few times an hour at most.
+        """
+        res = await self._request("GET", f"{READ_API}/summary")
+        return res if isinstance(res, dict) else {}
+
     async def async_get_monthly_costs(self, vehicle_id: str) -> dict[str, Any]:
         """Fetch the month-by-month costs of a vehicle, the month in progress last (read API)."""
         res = await self._request("GET", f"{READ_API}/vehicles/{vehicle_id}/monthly-costs")

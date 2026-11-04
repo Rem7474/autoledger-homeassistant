@@ -79,6 +79,22 @@ MONTHLY = {
 }
 
 
+SUMMARY = {
+    "vehicles": [
+        {
+            "vehicle_id": "v1",
+            "powertrain": "PHEV",
+            "currency": "EUR",
+            "cost_per_km": {"amount": "0.1840", "currency": "EUR"},
+            "consumption_kwh_100km": 17.5,
+            "consumption_l_100km": None,
+            "completeness_pct": 80,
+            "data_gaps": 2,
+        }
+    ]
+}
+
+
 def _entry() -> MockConfigEntry:
     return MockConfigEntry(
         domain=DOMAIN,
@@ -96,7 +112,7 @@ def _entry() -> MockConfigEntry:
     )
 
 
-async def _setup(hass: HomeAssistant, account: dict) -> MockConfigEntry:
+async def _setup(hass: HomeAssistant, account: dict, summary: dict = SUMMARY) -> MockConfigEntry:
     entry = _entry()
     entry.add_to_hass(hass)
     with (
@@ -105,6 +121,7 @@ async def _setup(hass: HomeAssistant, account: dict) -> MockConfigEntry:
         patch(f"{API}.async_get_account", new=AsyncMock(return_value=account)),
         patch(f"{API}.async_get_fleet_reminders", new=AsyncMock(return_value=FLEET_REMINDERS)),
         patch(f"{API}.async_get_monthly_costs", new=AsyncMock(return_value=MONTHLY)),
+        patch(f"{API}.async_get_summary", new=AsyncMock(return_value=summary)),
     ):
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
@@ -153,3 +170,36 @@ async def test_no_read_sensors_for_an_ingest_only_token(hass: HomeAssistant) -> 
     assert _state(hass, "overdue_reminders") is None
     assert _state(hass, "cost_this_month") is None
     assert hass.states.get("sensor.autoledger_charges_to_qualify") is None
+
+
+async def test_summary_sensors(hass: HomeAssistant) -> None:
+    await _setup(hass, {"scope": "homeassistant"})
+
+    cost = _state(hass, "cost_per_km")
+    assert float(cost.state) == 0.184
+    assert cost.attributes["unit_of_measurement"] == "EUR/km"
+    assert float(_state(hass, "consumption").state) == 17.5
+    assert _state(hass, "consumption").attributes["unit_of_measurement"] == "kWh/100 km"
+    # the fuel figure is unknown (no two full tanks): the sensor exists and says so
+    assert _state(hass, "fuel_consumption").state == "unknown"
+
+    gaps = hass.states.get("binary_sensor.family_data_gaps")
+    assert gaps.state == "on"
+    assert gaps.attributes["data_gaps"] == 2
+    assert gaps.attributes["completeness_pct"] == 80
+
+
+async def test_an_electric_vehicle_has_no_fuel_sensor(hass: HomeAssistant) -> None:
+    summary = {"vehicles": [{**SUMMARY["vehicles"][0], "powertrain": "EV", "data_gaps": 0}]}
+    await _setup(hass, {"scope": "homeassistant"}, summary)
+
+    assert _state(hass, "consumption") is not None
+    assert _state(hass, "fuel_consumption") is None
+    assert hass.states.get("binary_sensor.family_data_gaps").state == "off"
+
+
+async def test_no_data_gaps_sensor_for_an_ingest_only_token(hass: HomeAssistant) -> None:
+    await _setup(hass, {"scope": "ingest"})
+
+    assert hass.states.get("binary_sensor.family_data_gaps") is None
+    assert _state(hass, "cost_per_km") is None

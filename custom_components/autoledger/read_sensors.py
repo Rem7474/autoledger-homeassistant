@@ -74,6 +74,11 @@ class _VehicleReadSensor(CoordinatorEntity[AutoLedgerDataUpdateCoordinator], Sen
         return data.get("reminders", {}).get(self._vehicle_id, {})
 
     @property
+    def _summary(self) -> dict[str, Any]:
+        data = self.coordinator.data or {}
+        return data.get("summary", {}).get(self._vehicle_id, {})
+
+    @property
     def _month(self) -> dict[str, Any]:
         data = self.coordinator.data or {}
         return data.get("monthly", {}).get(self._vehicle_id, {})
@@ -228,6 +233,56 @@ class AutoLedgerMonthCostSensor(_VehicleReadSensor):
         return attrs
 
 
+class AutoLedgerCostPerKmSensor(_VehicleReadSensor):
+    """What a kilometre cost over the last twelve months, all categories."""
+
+    _key = "cost_per_km"
+    _title = "Cost Per Km"
+    _attr_icon = "mdi:cash-fast"
+    _attr_suggested_display_precision = 3
+
+    @property
+    def native_unit_of_measurement(self) -> str | None:
+        """Return the currency of the vehicle per kilometre."""
+        amount = self._summary.get("cost_per_km")
+        currency = (
+            amount.get("currency") if isinstance(amount, dict) else self._summary.get("currency")
+        )
+        return f"{currency}/km" if currency else None
+
+    @property
+    def native_value(self) -> Decimal | None:
+        """Return the cost per km; unknown while the distance is."""
+        return _amount(self._summary.get("cost_per_km"))
+
+
+class AutoLedgerConsumptionKwhSensor(_VehicleReadSensor):
+    """Electric energy used per 100 km."""
+
+    _key = "consumption_kwh_100km"
+    _title = "Consumption"
+    _attr_icon = "mdi:lightning-bolt"
+    _attr_native_unit_of_measurement = "kWh/100 km"
+    _attr_suggested_display_precision = 1
+    _field = "consumption_kwh_100km"
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the consumption; unknown without enough data."""
+        value = self._summary.get(self._field)
+        return float(value) if isinstance(value, (int, float)) else None
+
+
+class AutoLedgerConsumptionFuelSensor(AutoLedgerConsumptionKwhSensor):
+    """Fuel used per 100 km between full tanks."""
+
+    _key = "consumption_l_100km"
+    _title = "Fuel Consumption"
+    _attr_icon = "mdi:gas-station"
+    _attr_native_unit_of_measurement = "L/100 km"
+    _field = "consumption_l_100km"
+
+
 class AutoLedgerPendingChargesSensor(
     CoordinatorEntity[AutoLedgerDataUpdateCoordinator], SensorEntity
 ):
@@ -245,6 +300,7 @@ class AutoLedgerPendingChargesSensor(
             name="AutoLedger",
             manufacturer="AutoLedger",
             model="Account",
+            sw_version=(coordinator.data or {}).get("account", {}).get("server_version"),
         )
 
     @property

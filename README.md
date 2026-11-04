@@ -27,7 +27,8 @@ Connect your Home Assistant instance to AutoLedger to automatically detect EV ch
   - Vehicle: `sensor.<vehicle>_last_charge_cost`, `sensor.<vehicle>_cost_per_100km`
   - Charger: `sensor.<charger>_charging_state`, `sensor.<charger>_last_energy_kwh`, `sensor.<charger>_sync_status`
 - **Maintenance and cost sensors** (token with the `homeassistant` scope; not created for an `ingest`-only token):
-  - Vehicle: `sensor.<vehicle>_overdue_reminders`, `sensor.<vehicle>_reminders_due_soon` (the reminders are listed in the attributes), `sensor.<vehicle>_next_service_date`, `sensor.<vehicle>_next_service_distance`, `sensor.<vehicle>_cost_this_month` (with the split by category in the attributes)
+  - Vehicle: `sensor.<vehicle>_overdue_reminders`, `sensor.<vehicle>_reminders_due_soon` (the reminders are listed in the attributes), `sensor.<vehicle>_next_service_date`, `sensor.<vehicle>_next_service_distance`, `sensor.<vehicle>_cost_this_month` (with the split by category in the attributes), `sensor.<vehicle>_cost_per_km` (last 12 months), `sensor.<vehicle>_consumption` (kWh/100 km, electric and plug-in vehicles) and `sensor.<vehicle>_fuel_consumption` (L/100 km, fuel and plug-in vehicles); a figure AutoLedger cannot compute yet reads `unknown`, never 0
+  - Vehicle diagnostic: `binary_sensor.<vehicle>_data_gaps` (on when records are missing that weaken the figures; attributes give the count and the completeness percentage)
   - Account: `sensor.autoledger_charges_to_qualify` (charging sessions pushed from Home Assistant that no vehicle claimed yet)
 - **Native HA Services**:
   - `autoledger.sync`: Force an immediate synchronization with the AutoLedger server.
@@ -173,6 +174,10 @@ Standard energy loggers often register multiple tiny sessions of a few minutes, 
 |---|---|---|---|
 | `sensor.<vehicle>_last_charge_cost` | `monetary` | `€` / `$` | Total financial cost of the last charging session. |
 | `sensor.<vehicle>_cost_per_100km` | - | `€/100km` | Smoothed average operating energy cost per 100 km calculated by AutoLedger. |
+| `sensor.<vehicle>_cost_per_km` | - | `€/km` | What a kilometre cost over the last 12 months, all categories (`unknown` while the distance is unknown). |
+| `sensor.<vehicle>_consumption` | - | `kWh/100 km` | Electric energy used per 100 km. |
+| `sensor.<vehicle>_fuel_consumption` | - | `L/100 km` | Fuel used per 100 km between full tanks. |
+| `binary_sensor.<vehicle>_data_gaps` | - | - | On when the records lack something that weakens the figures. |
 | `sensor.<vehicle>_last_trip` | `timestamp` | - | End of the last trip sent (only with a trip position entity). Attributes: start time, addresses, coordinates, odometer readings. |
 
 ### Charging Station Entities

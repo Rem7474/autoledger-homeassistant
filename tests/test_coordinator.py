@@ -29,6 +29,7 @@ def _client(**overrides):
     client.async_get_account = AsyncMock(return_value={"scope": "ingest"})
     client.async_get_fleet_reminders = AsyncMock(return_value={"vehicles": []})
     client.async_get_monthly_costs = AsyncMock(return_value={"months": []})
+    client.async_get_summary = AsyncMock(return_value={"vehicles": []})
     for name, value in overrides.items():
         setattr(client, name, value)
     return client
@@ -156,3 +157,23 @@ async def test_token_revoked_while_reading_starts_reauthentication(mock_hass):
 
     with pytest.raises(ConfigEntryAuthFailed):
         await _coordinator(mock_hass, client)._async_update_data()
+
+
+@pytest.mark.asyncio
+async def test_summary_is_keyed_by_vehicle_and_survives_an_older_server(mock_hass):
+    client = _client(
+        async_get_account=AsyncMock(return_value={"scope": "homeassistant"}),
+        async_get_summary=AsyncMock(
+            return_value={"vehicles": [{"vehicle_id": "v1", "data_gaps": 2}, {"data_gaps": 9}]}
+        ),
+    )
+    coordinator = _coordinator(mock_hass, client)
+
+    data = await coordinator._async_update_data()
+    assert data["summary"] == {"v1": {"vehicle_id": "v1", "data_gaps": 2}}
+
+    # a server without the route: the figures read so far stay, the rest keeps working
+    client.async_get_summary.side_effect = AutoLedgerApiError("not found", status_code=404)
+    data = await coordinator._async_update_data()
+    assert data["summary"]["v1"]["data_gaps"] == 2
+    assert data["read_access"] is True

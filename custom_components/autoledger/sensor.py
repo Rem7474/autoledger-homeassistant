@@ -37,6 +37,9 @@ from .const import (
 from .coordinator import AutoLedgerDataUpdateCoordinator
 from .odometer_tracker import AutoLedgerOdometerTracker
 from .read_sensors import (
+    AutoLedgerConsumptionFuelSensor,
+    AutoLedgerConsumptionKwhSensor,
+    AutoLedgerCostPerKmSensor,
     AutoLedgerMonthCostSensor,
     AutoLedgerNextServiceDateSensor,
     AutoLedgerNextServiceDistanceSensor,
@@ -210,8 +213,25 @@ async def async_setup_entry(
                     AutoLedgerNextServiceDateSensor,
                     AutoLedgerNextServiceDistanceSensor,
                     AutoLedgerMonthCostSensor,
+                    AutoLedgerCostPerKmSensor,
                 )
             )
+            # The consumption that applies depends on the energy the vehicle uses.
+            powertrain = (
+                coordinator.data.get("summary", {}).get(vehicle_id, {}).get("powertrain") or ""
+            ).upper()
+            if powertrain in ("EV", "PHEV", "REEV"):
+                entities.append(
+                    AutoLedgerConsumptionKwhSensor(
+                        coordinator, entry, vehicle_id, v_name, device_info
+                    )
+                )
+            if powertrain in ("ICE", "PHEV", "REEV"):
+                entities.append(
+                    AutoLedgerConsumptionFuelSensor(
+                        coordinator, entry, vehicle_id, v_name, device_info
+                    )
+                )
     else:
         _LOGGER.info(
             "The API token cannot read the AutoLedger figures: reminder and cost sensors are "
