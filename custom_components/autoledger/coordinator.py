@@ -126,7 +126,28 @@ class AutoLedgerDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if months:
                     monthly[vehicle_id] = months[-1]
 
-            self._read_data = {"account": account, "reminders": reminders, "monthly": monthly}
+            summary: dict[str, dict[str, Any]] = {}
+            try:
+                fleet_summary = await self.client.async_get_summary()
+            except AutoLedgerAuthError:
+                raise
+            except AutoLedgerError as err:
+                # A server older than the summary route: the other figures still work.
+                _LOGGER.warning("Failed to read the AutoLedger summary: %s", err)
+                summary = self._read_data.get("summary", {})
+            else:
+                summary = {
+                    str(item.get("vehicle_id")): item
+                    for item in fleet_summary.get("vehicles", [])
+                    if item.get("vehicle_id") is not None
+                }
+
+            self._read_data = {
+                "account": account,
+                "reminders": reminders,
+                "monthly": monthly,
+                "summary": summary,
+            }
         except AutoLedgerAuthError:
             raise
         except AutoLedgerError as err:

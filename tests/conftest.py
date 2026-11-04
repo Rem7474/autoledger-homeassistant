@@ -101,6 +101,7 @@ if "homeassistant" not in sys.modules:
         ha.components.button = ModuleType("homeassistant.components.button")
 
         class Platform(StrEnum):
+            BINARY_SENSOR = "binary_sensor"
             BUTTON = "button"
             SENSOR = "sensor"
 
