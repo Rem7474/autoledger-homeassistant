@@ -45,7 +45,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install --only-binary :all: -r tests_ha/requirements.txt
+          pip install --only-binary :all: --no-binary mock-open -r tests_ha/requirements.txt
 
       - name: Run the tests against Home Assistant
         run: |
