@@ -68,7 +68,6 @@
       "reconfigure_successful": "Connexion à AutoLedger mise à jour avec succès.",
       "reauth_successful": "Réauthentification réussie.",
       "oauth_failed": "AutoLedger a refusé de donner un jeton d'accès à Home Assistant. Réessayez.",
-      "oauth_scope_not_granted": "L'accès a été approuvé sans la case qui permet à Home Assistant d'enregistrer les charges, les relevés d'odomètre et les trajets. Autorisez à nouveau en la cochant.",
       "user_rejected_authorize": "L'autorisation a été refusée ({error}).",
       "cannot_connect": "Échec de connexion au serveur AutoLedger. Vérifiez l'URL de l'hôte."
     }
@@ -202,6 +201,10 @@
     "server_too_old": {
       "title": "Le serveur AutoLedger est trop ancien",
       "description": "Le serveur AutoLedger est en version {version}, et l'intégration lit des chiffres qui demandent la version {minimum} ou plus récente. Les rappels, les coûts et les consommations peuvent manquer. Mettez à jour le serveur AutoLedger."
+    },
+    "read_only_access": {
+      "title": "Home Assistant ne peut que lire AutoLedger",
+      "description": "L'accès accordé à Home Assistant est en lecture seule : les recharges, les relevés d'odomètre et les trajets ne sont pas envoyés à AutoLedger. Reconfigurez l'intégration, autorisez à nouveau et cochez la case qui permet à Home Assistant d'enregistrer des données."
     }
   }
 }

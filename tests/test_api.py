@@ -100,6 +100,18 @@ async def test_validate_rejects_a_token_the_server_refuses_everywhere(mock_sessi
 
 
 @pytest.mark.asyncio
+async def test_validate_can_accept_a_read_only_grant(mock_session):
+    """An OAuth grant without the recording box is `read`: the connection keeps it."""
+    mock_session.request.return_value = MockClientResponse(
+        status=200, json_data={"scope": "read", "name": "Rémi"}
+    )
+
+    account = await _client(mock_session).async_validate(require_push=False)
+
+    assert account["scope"] == "read"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("scope", ["read", "write"])
 async def test_validate_rejects_scopes_that_cannot_push(mock_session, scope):
     """A read or write token reads fine but cannot send charges, odometer or trips."""

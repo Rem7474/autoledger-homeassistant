@@ -10,6 +10,7 @@ from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.storage import Store
 
 from .const import (
@@ -18,7 +19,9 @@ from .const import (
     CONF_CHARGERS,
     CONF_VEHICLES,
     DOMAIN,
+    ISSUE_READ_ONLY_ACCESS,
     PLATFORMS,
+    PUSH_TOKEN_SCOPES,
 )
 from .coordinator import AutoLedgerDataUpdateCoordinator
 from .oauth import build_client
@@ -97,28 +100,49 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Initial data load
     await coordinator.async_config_entry_first_refresh()
 
-    # Setup odometer tracker for trip-end stabilization and initial sync
-    odometer_tracker = AutoLedgerOdometerTracker(
-        hass=hass,
-        client=client,
-        vehicles_config=configured_vehicles,
-        coordinator=coordinator,
-    )
-    coordinator.odometer_tracker = odometer_tracker
-    await odometer_tracker.async_setup()
+    # A read-only grant (the consent page's recording box left unticked) cannot send
+    # anything: nothing is tracked, and a repair issue says how to fix it.
+    read_only = _is_read_only(coordinator)
+    issue_id = f"{ISSUE_READ_ONLY_ACCESS}_{entry.entry_id}"
+    if read_only:
+        ir.async_create_issue(
+            hass,
+            DOMAIN,
+            issue_id,
+            is_fixable=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key=ISSUE_READ_ONLY_ACCESS,
+        )
+    else:
+        ir.async_delete_issue(hass, DOMAIN, issue_id)
 
-    trip_tracker = AutoLedgerTripTracker(
-        hass=hass,
-        client=client,
-        vehicles_config=configured_vehicles,
-        store=Store(hass, 1, f"{DOMAIN}.{entry.entry_id}.trips"),
-        coordinator=coordinator,
-    )
-    await trip_tracker.async_setup()
+    odometer_tracker: AutoLedgerOdometerTracker | None = None
+    trip_tracker: AutoLedgerTripTracker | None = None
+    if not read_only:
+        # Setup odometer tracker for trip-end stabilization and initial sync
+        odometer_tracker = AutoLedgerOdometerTracker(
+            hass=hass,
+            client=client,
+            vehicles_config=configured_vehicles,
+            coordinator=coordinator,
+        )
+        coordinator.odometer_tracker = odometer_tracker
+        await odometer_tracker.async_setup()
+
+        trip_tracker = AutoLedgerTripTracker(
+            hass=hass,
+            client=client,
+            vehicles_config=configured_vehicles,
+            store=Store(hass, 1, f"{DOMAIN}.{entry.entry_id}.trips"),
+            coordinator=coordinator,
+        )
+        await trip_tracker.async_setup()
 
     # Setup charger trackers for each configured charging station
     trackers: dict[str, AutoLedgerChargerTracker] = {}
     for charger_id, charger_conf in configured_chargers.items():
+        if read_only:
+            break
         tracker = AutoLedgerChargerTracker(
             hass=hass,
             client=client,
@@ -133,6 +157,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     entry_data = {
         "config_signature": _config_signature(entry),
+        "read_only": read_only,
         "client": client,
         "coordinator": coordinator,
         "odometer_tracker": odometer_tracker,
@@ -155,6 +180,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
 
     return True
+
+
+def _is_read_only(coordinator: AutoLedgerDataUpdateCoordinator) -> bool:
+    """Whether the token is known to be unable to send data (a "read" or "write" grant)."""
+    scope = ((coordinator.data or {}).get("account") or {}).get("scope")
+    return bool(scope) and scope not in PUSH_TOKEN_SCOPES
 
 
 def _remove_stale_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:

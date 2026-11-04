@@ -68,7 +68,6 @@
       "reconfigure_successful": "AutoLedger connection successfully updated.",
       "reauth_successful": "Re-authentication succeeded.",
       "oauth_failed": "AutoLedger refused to give Home Assistant an access token. Try again.",
-      "oauth_scope_not_granted": "The access was approved without the box that lets Home Assistant record charges, odometer readings and trips. Authorize again and tick it.",
       "user_rejected_authorize": "The authorization was refused ({error}).",
       "cannot_connect": "Failed to connect to the AutoLedger server. Check host URL."
     }
@@ -202,6 +201,10 @@
     "server_too_old": {
       "title": "AutoLedger server is too old",
       "description": "The AutoLedger server is version {version}, and the integration reads figures that need version {minimum} or later. Reminders, costs and consumption may be missing. Update the AutoLedger server."
+    },
+    "read_only_access": {
+      "title": "Home Assistant can only read from AutoLedger",
+      "description": "The access granted to Home Assistant is read-only, so charging sessions, odometer readings and trips are not sent to AutoLedger. Reconfigure the integration, authorize again and tick the box that lets Home Assistant record data."
     }
   }
 }
