@@ -38,6 +38,14 @@ from .const import (
 )
 from .coordinator import AutoLedgerDataUpdateCoordinator
 from .odometer_tracker import AutoLedgerOdometerTracker
+from .read_sensors import (
+    AutoLedgerMonthCostSensor,
+    AutoLedgerNextServiceDateSensor,
+    AutoLedgerNextServiceDistanceSensor,
+    AutoLedgerPendingChargesSensor,
+    AutoLedgerRemindersDueSoonSensor,
+    AutoLedgerRemindersOverdueSensor,
+)
 from .session_tracker import AutoLedgerChargerTracker
 from .trip_tracker import AutoLedgerTripTracker
 
@@ -185,6 +193,30 @@ async def async_setup_entry(
                 charger_name=c_name,
                 device_info=c_device_info,
             )
+        )
+
+    if coordinator.data and coordinator.data.get("read_access"):
+        entities.append(AutoLedgerPendingChargesSensor(coordinator, entry))
+        for vehicle_id, vehicle_conf in configured_vehicles.items():
+            v_name = vehicle_conf.get(CONF_VEHICLE_NAME, f"Vehicle {vehicle_id}")
+            meta = coordinator.data.get("vehicles", {}).get(vehicle_id, {})
+            device_info = _get_vehicle_device_info(
+                entry, vehicle_id, v_name, meta.get("make"), meta.get("model")
+            )
+            entities.extend(
+                sensor_cls(coordinator, entry, vehicle_id, v_name, device_info)
+                for sensor_cls in (
+                    AutoLedgerRemindersOverdueSensor,
+                    AutoLedgerRemindersDueSoonSensor,
+                    AutoLedgerNextServiceDateSensor,
+                    AutoLedgerNextServiceDistanceSensor,
+                    AutoLedgerMonthCostSensor,
+                )
+            )
+    else:
+        _LOGGER.info(
+            "The API token cannot read the AutoLedger figures: reminder and cost sensors are "
+            "not created. Use a token with the 'homeassistant' scope to get them."
         )
 
     async_add_entities(entities)
