@@ -23,10 +23,9 @@ from .api import (
     AutoLedgerTimeoutError,
 )
 from .const import (
-    ASSIGNMENT_MODE_CORRELATION,
     ASSIGNMENT_MODE_FIXED,
     ASSIGNMENT_MODE_INPUT_SELECT,
-    ASSIGNMENT_MODE_UNASSIGNED,
+    ASSIGNMENT_MODES,
     CONF_API_KEY,
     CONF_ASSIGNMENT_MODE,
     CONF_BATTERY_SOC_ENTITY,
@@ -54,8 +53,8 @@ from .const import (
     DEFAULT_DEBOUNCE_SECONDS,
     DEFAULT_VERIFY_SSL,
     DOMAIN,
-    ENERGY_METER_TYPE_SESSION,
     ENERGY_METER_TYPE_TOTAL_INCREASING,
+    ENERGY_METER_TYPES,
     MAX_DEBOUNCE_SECONDS,
     MIN_DEBOUNCE_SECONDS,
 )
@@ -76,7 +75,7 @@ def _inspect_entity(hass: Any, entity_id: str | None) -> dict[str, Any]:
             "exists": False,
             "state": None,
             "unit": None,
-            "formatted": "Non configuré",
+            "formatted": "—",
         }
 
     state_obj = hass.states.get(entity_id) if hass else None
@@ -85,15 +84,14 @@ def _inspect_entity(hass: Any, entity_id: str | None) -> dict[str, Any]:
             "exists": False,
             "state": None,
             "unit": None,
-            "formatted": f"{entity_id} (État indisponible)",
+            "formatted": f"{entity_id} (not found)",
         }
 
     val = state_obj.state
     unit = state_obj.attributes.get("unit_of_measurement") or ""
 
     if val in ("unavailable", "unknown"):
-        display_val = "Indisponible" if val == "unavailable" else "Inconnu"
-        formatted = f"{display_val} (Unité : {unit})" if unit else display_val
+        formatted = f"{val} ({unit})" if unit else val
     else:
         try:
             f_val = float(val)
@@ -392,9 +390,20 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
             client = self._get_api_client()
             try:
                 self._vehicles_from_api = await client.async_get_vehicles()
+            except AutoLedgerAuthError:
+                return self.async_abort(reason="invalid_auth")
             except Exception as err:
                 _LOGGER.warning("Could not fetch vehicles from AutoLedger: %s", err)
-                self._vehicles_from_api = []
+                return self.async_abort(reason="cannot_connect")
+
+        configured_ids = set(self._config_entry.options.get(CONF_VEHICLES, {}))
+        available_vehicles = [
+            v
+            for v in self._vehicles_from_api
+            if str(v.get("id", "")) and str(v.get("id")) not in configured_ids
+        ]
+        if not available_vehicles:
+            return self.async_abort(reason="no_vehicle_available")
 
         if user_input is not None:
             vehicle_id = user_input[CONF_VEHICLE_ID]
@@ -413,18 +422,11 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
             return await self.async_step_vehicle_mapping()
 
         vehicle_options = []
-        for v in self._vehicles_from_api:
-            v_id = str(v.get("id", ""))
-            if not v_id:
-                continue
+        for v in available_vehicles:
+            v_id = str(v.get("id"))
             name_parts = [v.get("make"), v.get("model"), v.get("name")]
             label = " ".join([p for p in name_parts if p]) or f"Vehicle {v_id}"
             vehicle_options.append(selector.SelectOptionDict(value=v_id, label=label))
-
-        if not vehicle_options:
-            vehicle_options.append(
-                selector.SelectOptionDict(value="custom_vehicle", label="Default Vehicle")
-            )
 
         schema = vol.Schema(
             {
@@ -606,19 +608,12 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
 
         # Generate live preview for prefilled/detected values
         preview_lines = []
-        if prefill_battery:
-            b_info = _inspect_entity(self.hass, prefill_battery)
-            preview_lines.append(f"• Batterie SoC : {b_info['formatted']}")
-        if prefill_odometer:
-            o_info = _inspect_entity(self.hass, prefill_odometer)
-            preview_lines.append(f"• Odomètre : {o_info['formatted']}")
-        if prefill_charging:
-            c_info = _inspect_entity(self.hass, prefill_charging)
-            preview_lines.append(f"• État de charge : {c_info['formatted']}")
+        for entity_id in (prefill_battery, prefill_odometer, prefill_charging):
+            if entity_id:
+                info = _inspect_entity(self.hass, entity_id)
+                preview_lines.append(f"• {entity_id} : {info['formatted']}")
 
-        preview_section = (
-            "\n".join(preview_lines) if preview_lines else "Sélectionnez vos capteurs ci-dessous."
-        )
+        preview_section = "\n".join(preview_lines)
 
         fields: dict[Any, Any] = {
             vol.Optional(
@@ -863,15 +858,11 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
         prefill_location = self._temp_charger.get(CONF_CHARGING_LOCATION, DEFAULT_CHARGING_LOCATION)
 
         preview_lines = []
-        if prefill_status:
-            s_info = _inspect_entity(self.hass, prefill_status)
-            preview_lines.append(f"• Statut : {s_info['formatted']}")
-        if prefill_energy:
-            e_info = _inspect_entity(self.hass, prefill_energy)
-            preview_lines.append(f"• Énergie : {e_info['formatted']}")
-        preview_section = (
-            "\n".join(preview_lines) if preview_lines else "Sélectionnez vos capteurs ci-dessous."
-        )
+        for entity_id in (prefill_status, prefill_energy):
+            if entity_id:
+                info = _inspect_entity(self.hass, entity_id)
+                preview_lines.append(f"• {entity_id} : {info['formatted']}")
+        preview_section = "\n".join(preview_lines)
 
         fields: dict[Any, Any] = {}
         if prefill_name:
@@ -909,16 +900,7 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
         fields[vol.Optional(CONF_ENERGY_METER_TYPE, default=prefill_energy_type)] = (
             selector.SelectSelector(
                 selector.SelectSelectorConfig(
-                    options=[
-                        selector.SelectOptionDict(
-                            value=ENERGY_METER_TYPE_TOTAL_INCREASING,
-                            label="Total Increasing (Cumulative kWh)",
-                        ),
-                        selector.SelectOptionDict(
-                            value=ENERGY_METER_TYPE_SESSION,
-                            label="Session Energy (Resets per charge)",
-                        ),
-                    ],
+                    options=list(ENERGY_METER_TYPES),
                     mode=selector.SelectSelectorMode.DROPDOWN,
                     translation_key="energy_meter_type",
                 )
@@ -959,7 +941,7 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
             linked_vehicle = user_input.get(CONF_LINKED_VEHICLE_ID)
             vehicle_select = user_input.get(CONF_VEHICLE_SELECT_ENTITY)
 
-            if mode == ASSIGNMENT_MODE_FIXED and not linked_vehicle:
+            if mode == ASSIGNMENT_MODE_FIXED and linked_vehicle not in configured_vehicles:
                 errors["base"] = "select_vehicle"
             elif mode == ASSIGNMENT_MODE_INPUT_SELECT and not vehicle_select:
                 errors["base"] = "select_entity"
@@ -978,25 +960,6 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
         prefill_linked_vehicle = self._temp_charger.get(CONF_LINKED_VEHICLE_ID)
         prefill_select_entity = self._temp_charger.get(CONF_VEHICLE_SELECT_ENTITY)
 
-        mode_options = [
-            selector.SelectOptionDict(
-                value=ASSIGNMENT_MODE_FIXED,
-                label="Fixed Vehicle (Linked)",
-            ),
-            selector.SelectOptionDict(
-                value=ASSIGNMENT_MODE_INPUT_SELECT,
-                label="Dynamic Selector (input_select)",
-            ),
-            selector.SelectOptionDict(
-                value=ASSIGNMENT_MODE_CORRELATION,
-                label="Automatic Correlation",
-            ),
-            selector.SelectOptionDict(
-                value=ASSIGNMENT_MODE_UNASSIGNED,
-                label="Unassigned / Multi-vehicle (Qualify later)",
-            ),
-        ]
-
         vehicle_options = [
             selector.SelectOptionDict(
                 value=vid,
@@ -1004,10 +967,6 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
             )
             for vid, vdata in configured_vehicles.items()
         ]
-        if not vehicle_options:
-            vehicle_options.append(
-                selector.SelectOptionDict(value="none", label="No vehicles configured")
-            )
 
         fields: dict[Any, Any] = {
             vol.Required(
@@ -1015,7 +974,7 @@ class AutoLedgerOptionsFlowHandler(config_entries.OptionsFlow):
                 default=prefill_mode,
             ): selector.SelectSelector(
                 selector.SelectSelectorConfig(
-                    options=mode_options,
+                    options=list(ASSIGNMENT_MODES),
                     mode=selector.SelectSelectorMode.DROPDOWN,
                     translation_key="assignment_mode",
                 )

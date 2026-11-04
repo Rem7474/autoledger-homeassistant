@@ -159,6 +159,11 @@
       "invalid_battery_range": "Le niveau de batterie (SoC) doit être compris entre 0% et 100%.",
       "invalid_odometer_range": "L'odomètre ne peut pas être négatif.",
       "invalid_energy_range": "La valeur du compteur d'énergie ne peut pas être négative."
+    },
+    "abort": {
+      "cannot_connect": "Impossible de joindre le serveur AutoLedger. Vérifiez qu'il est accessible, puis réessayez.",
+      "invalid_auth": "Le serveur AutoLedger a refusé le jeton d'API. Saisissez-le de nouveau depuis les paramètres de connexion.",
+      "no_vehicle_available": "Aucun véhicule à ajouter : tous les véhicules du compte AutoLedger sont déjà configurés, ou le compte n'en a aucun."
     }
   },
   "selector": {
