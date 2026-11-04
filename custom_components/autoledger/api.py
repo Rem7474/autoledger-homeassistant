@@ -9,7 +9,13 @@ import aiohttp
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 
-from .const import EVENT_TYPE_DRIVE, EVENT_TYPE_ODOMETER_UPDATE, INTEGRATION_API
+from .const import (
+    EVENT_TYPE_DRIVE,
+    EVENT_TYPE_ODOMETER_UPDATE,
+    INTEGRATION_API,
+    PUSH_TOKEN_SCOPES,
+    READ_API,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -39,6 +45,15 @@ class AutoLedgerAuthError(AutoLedgerError):
 
 class AutoLedgerTimeoutError(AutoLedgerError):
     """Exception for network timeout errors."""
+
+
+class AutoLedgerScopeError(AutoLedgerError):
+    """The token is valid but its scope cannot push data to AutoLedger."""
+
+    def __init__(self, scope: str) -> None:
+        """Initialize scope error."""
+        super().__init__(f"Token scope '{scope}' cannot send data to AutoLedger")
+        self.scope = scope
 
 
 class AutoLedgerApiClient:
@@ -153,10 +168,36 @@ class AutoLedgerApiClient:
             _LOGGER.exception("Unexpected error while communicating with AutoLedger: %s", err)
             raise AutoLedgerApiError(f"Unexpected error: {err}") from err
 
-    async def async_test_connection(self) -> bool:
-        """Test API connectivity and credentials with an authenticated call."""
-        await self._request("GET", f"{INTEGRATION_API}/vehicles")
-        return True
+    async def async_get_account(self) -> dict[str, Any]:
+        """Describe the token and its account (scope, name, server version).
+
+        An "ingest" token is refused by the read API, and a server older than
+        the account route answers 404: in both cases the Home Assistant vehicle
+        list tells whether the token works, and the scope is inferred or unknown.
+        """
+        try:
+            res = await self._request("GET", f"{READ_API}/whoami")
+            return res if isinstance(res, dict) else {}
+        except AutoLedgerAuthError:
+            await self._request("GET", f"{INTEGRATION_API}/vehicles")
+            return {"scope": "ingest"}
+        except AutoLedgerApiError as err:
+            if err.status_code != 404:
+                raise
+            await self._request("GET", f"{INTEGRATION_API}/vehicles")
+            return {}
+
+    async def async_validate(self) -> dict[str, Any]:
+        """Check the credentials and that the token can push data.
+
+        Returns the account description; raises AutoLedgerAuthError for a token
+        the server refuses and AutoLedgerScopeError for a "read" or "write" one.
+        """
+        account = await self.async_get_account()
+        scope = account.get("scope")
+        if scope and scope not in PUSH_TOKEN_SCOPES:
+            raise AutoLedgerScopeError(str(scope))
+        return account
 
     async def async_get_vehicles(self) -> list[dict[str, Any]]:
         """Fetch list of all vehicles from AutoLedger."""

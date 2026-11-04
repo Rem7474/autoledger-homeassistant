@@ -102,9 +102,9 @@ flowchart TD
 2. Click **+ Add Integration** and search for **AutoLedger**.
 3. Fill in your server details:
    - **Server URL**: The base URL of your AutoLedger instance (e.g., `http://192.168.1.100:8080` or `https://autoledger.yourdomain.com`).
-   - **API Token**: Your AutoLedger Personal Access Token or Bearer Token.
+   - **API Token**: An AutoLedger API token created in *Account > API tokens* with the **`homeassistant`** scope (or `ingest`). A `read` or `write` token is refused at this step because it cannot send charges, odometer readings or trips.
    - **Verify SSL Certificate**: Enable or disable according to your local setup.
-4. Click **Submit**. The integration validates the connection immediately.
+4. Click **Submit**. The integration validates the connection and the token scope immediately. If AutoLedger later stops accepting the token (revoked, expired), Home Assistant shows a **Re-authenticate** prompt on the integration card; enter a new token there.
 
 ### 2. Manage Vehicles (`OptionsFlow` > 🚗 Manage Vehicles)
 

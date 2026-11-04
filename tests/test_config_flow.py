@@ -10,6 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 from custom_components.autoledger.api import (
     AutoLedgerAuthError,
     AutoLedgerConnectionError,
+    AutoLedgerScopeError,
 )
 from custom_components.autoledger.config_flow import (
     AutoLedgerConfigFlow,
@@ -69,7 +70,7 @@ async def test_flow_user_success(mock_hass):
     }
 
     with patch(
-        "custom_components.autoledger.config_flow.AutoLedgerApiClient.async_test_connection",
+        "custom_components.autoledger.config_flow.AutoLedgerApiClient.async_validate",
         new_callable=AsyncMock,
         return_value=True,
     ):
@@ -94,7 +95,7 @@ async def test_flow_user_invalid_auth(mock_hass):
     }
 
     with patch(
-        "custom_components.autoledger.config_flow.AutoLedgerApiClient.async_test_connection",
+        "custom_components.autoledger.config_flow.AutoLedgerApiClient.async_validate",
         side_effect=AutoLedgerAuthError("Invalid credentials"),
     ):
         result = await flow.async_step_user(user_input=user_input)
@@ -116,7 +117,7 @@ async def test_flow_user_cannot_connect(mock_hass):
     }
 
     with patch(
-        "custom_components.autoledger.config_flow.AutoLedgerApiClient.async_test_connection",
+        "custom_components.autoledger.config_flow.AutoLedgerApiClient.async_validate",
         side_effect=AutoLedgerConnectionError("Unreachable"),
     ):
         result = await flow.async_step_user(user_input=user_input)
@@ -143,7 +144,7 @@ async def test_flow_reconfigure(mock_hass):
 
     # Submit valid update
     with patch(
-        "custom_components.autoledger.config_flow.AutoLedgerApiClient.async_test_connection",
+        "custom_components.autoledger.config_flow.AutoLedgerApiClient.async_validate",
         new_callable=AsyncMock,
         return_value=True,
     ):
@@ -838,3 +839,126 @@ async def test_charger_assignment_options_are_translation_keys_only(mock_hass):
         "unassigned",
     ]
     assert config["translation_key"] == "assignment_mode"
+
+
+def _reauth_flow(mock_hass, entry):
+    flow = AutoLedgerConfigFlow()
+    flow.hass = mock_hass
+    flow.source = "reauth"
+    flow._reauth_entry = entry
+    return flow
+
+
+def _token_entry(**data):
+    return ConfigEntry(
+        entry_id="entry_reauth",
+        data={CONF_HOST: "http://autoledger.local", CONF_API_KEY: "old", **data},
+    )
+
+
+@pytest.mark.asyncio
+async def test_reauth_shows_the_token_form_for_the_entry_host(mock_hass):
+    flow = _reauth_flow(mock_hass, _token_entry())
+
+    start = await flow.async_step_reauth({CONF_HOST: "http://autoledger.local"})
+
+    assert start["type"] == "form"
+    assert start["step_id"] == "reauth_confirm"
+    assert start["description_placeholders"] == {"host": "http://autoledger.local"}
+
+
+@pytest.mark.asyncio
+async def test_reauth_stores_the_new_token(mock_hass):
+    entry = _token_entry()
+    flow = _reauth_flow(mock_hass, entry)
+
+    with patch(
+        "custom_components.autoledger.config_flow.AutoLedgerApiClient.async_validate",
+        new_callable=AsyncMock,
+        return_value={"scope": "homeassistant"},
+    ):
+        result = await flow.async_step_reauth_confirm({CONF_API_KEY: "new"})
+
+    assert result == {"type": "abort", "reason": "reauth_successful"}
+    assert entry.data[CONF_API_KEY] == "new"
+    assert entry.data[CONF_HOST] == "http://autoledger.local"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("raised", "error"),
+    [
+        (AutoLedgerAuthError("no"), "invalid_auth"),
+        (AutoLedgerScopeError("read"), "invalid_scope"),
+        (AutoLedgerConnectionError("down"), "cannot_connect"),
+        (RuntimeError("boom"), "unknown"),
+    ],
+)
+async def test_reauth_reports_why_the_token_is_not_usable(mock_hass, raised, error):
+    entry = _token_entry()
+    flow = _reauth_flow(mock_hass, entry)
+
+    with patch(
+        "custom_components.autoledger.config_flow.AutoLedgerApiClient.async_validate",
+        side_effect=raised,
+    ):
+        result = await flow.async_step_reauth_confirm({CONF_API_KEY: "new"})
+
+    assert result["type"] == "form"
+    assert result["errors"]["base"] == error
+    assert entry.data[CONF_API_KEY] == "old"
+
+
+@pytest.mark.asyncio
+async def test_user_step_rejects_a_read_only_token(mock_hass):
+    flow = AutoLedgerConfigFlow()
+    flow.hass = mock_hass
+
+    with patch(
+        "custom_components.autoledger.config_flow.AutoLedgerApiClient.async_validate",
+        side_effect=AutoLedgerScopeError("read"),
+    ):
+        result = await flow.async_step_user(
+            {CONF_HOST: "http://autoledger.local", CONF_API_KEY: "al_live_x"}
+        )
+
+    assert result["type"] == "form"
+    assert result["errors"]["base"] == "invalid_scope"
+
+
+@pytest.mark.asyncio
+async def test_reconfigure_moves_the_unique_id_with_the_host(mock_hass):
+    entry = _token_entry()
+    entry.unique_id = "http://autoledger.local"
+    flow = AutoLedgerConfigFlow()
+    flow.hass = mock_hass
+    flow._reconfigure_entry = entry
+
+    with patch(
+        "custom_components.autoledger.config_flow.AutoLedgerApiClient.async_validate",
+        new_callable=AsyncMock,
+        return_value={},
+    ):
+        result = await flow.async_step_reconfigure(
+            {CONF_HOST: "https://New.Example/", CONF_API_KEY: "k"}
+        )
+
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data[CONF_HOST] == "https://New.Example"
+    assert entry.unique_id == "https://new.example"
+
+
+@pytest.mark.asyncio
+async def test_reconfigure_refuses_a_host_another_entry_already_uses(mock_hass):
+    entry = _token_entry()
+    other = ConfigEntry(entry_id="other", data={CONF_HOST: "http://b.local", CONF_API_KEY: "k"})
+    other.unique_id = "http://b.local"
+    flow = AutoLedgerConfigFlow()
+    flow.hass = mock_hass
+    flow._reconfigure_entry = entry
+    flow._current_entries = [entry, other]
+
+    result = await flow.async_step_reconfigure({CONF_HOST: "http://B.local", CONF_API_KEY: "k"})
+
+    assert result == {"type": "abort", "reason": "already_configured"}
+    assert entry.data[CONF_HOST] == "http://autoledger.local"

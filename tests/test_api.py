@@ -12,6 +12,7 @@ from custom_components.autoledger.api import (
     AutoLedgerApiError,
     AutoLedgerAuthError,
     AutoLedgerConnectionError,
+    AutoLedgerScopeError,
     AutoLedgerTimeoutError,
 )
 
@@ -56,64 +57,102 @@ def called_urls(mock_session) -> list[str]:
     return [call.kwargs["url"] for call in mock_session.request.call_args_list]
 
 
-@pytest.mark.asyncio
-async def test_connection_checks_the_token_on_an_integration_route(mock_session):
-    """The connection test is an authenticated call, not the public health check."""
-    mock_session.request.return_value = MockClientResponse(status=200, json_data=[])
-    client = AutoLedgerApiClient("http://autoledger.local:8080", "test_key", mock_session)
+WHOAMI_URL = "http://autoledger.local:8080/api/integrations/v1/whoami"
+VEHICLES_URL = "http://autoledger.local:8080/api/integrations/homeassistant/vehicles"
 
-    result = await client.async_test_connection()
-    assert result is True
+
+def _client(mock_session, host="http://autoledger.local:8080"):
+    return AutoLedgerApiClient(host, "test_key", mock_session)
+
+
+@pytest.mark.asyncio
+async def test_validate_reads_the_account_of_the_token(mock_session):
+    """A homeassistant token is described by whoami and needs no other call."""
+    account = {"scope": "homeassistant", "name": "Rémi", "server_version": "1.60.0"}
+    mock_session.request.return_value = MockClientResponse(status=200, json_data=account)
+    client = _client(mock_session)
+
+    assert await client.async_validate() == account
     assert client.host == "http://autoledger.local:8080"
-    assert called_urls(mock_session) == [
-        "http://autoledger.local:8080/api/integrations/homeassistant/vehicles"
-    ]
+    assert called_urls(mock_session) == [WHOAMI_URL]
 
 
 @pytest.mark.asyncio
-async def test_connection_404_is_not_masked(mock_session):
-    """A server without the integration routes is reported as such, no other route is tried."""
-    mock_session.request.return_value = MockClientResponse(status=404, text_data="Not Found")
-    client = AutoLedgerApiClient("http://autoledger.local:8080/", "test_key", mock_session)
-
-    with pytest.raises(AutoLedgerApiError) as exc:
-        await client.async_test_connection()
-    assert exc.value.status_code == 404
-    assert called_urls(mock_session) == [
-        "http://autoledger.local:8080/api/integrations/homeassistant/vehicles"
+async def test_validate_accepts_an_ingest_only_token(mock_session):
+    """whoami refuses an ingest token: the Home Assistant vehicle list proves it works."""
+    mock_session.request.side_effect = [
+        MockClientResponse(status=403, text_data="forbidden"),
+        MockClientResponse(status=200, json_data=[]),
     ]
+
+    assert await _client(mock_session).async_validate() == {"scope": "ingest"}
+    assert called_urls(mock_session) == [WHOAMI_URL, VEHICLES_URL]
 
 
 @pytest.mark.asyncio
-async def test_connection_auth_error(mock_session):
-    """Test authentication error handling."""
+async def test_validate_rejects_a_token_the_server_refuses_everywhere(mock_session):
+    """A revoked token fails on whoami and on the vehicle list: it is an auth error."""
     mock_session.request.return_value = MockClientResponse(status=401, text_data="Unauthorized")
-    client = AutoLedgerApiClient("http://autoledger.local:8080", "invalid_key", mock_session)
 
     with pytest.raises(AutoLedgerAuthError):
-        await client.async_test_connection()
+        await _client(mock_session).async_validate()
+    assert called_urls(mock_session) == [WHOAMI_URL, VEHICLES_URL]
 
 
 @pytest.mark.asyncio
-async def test_connection_timeout(mock_session):
+@pytest.mark.parametrize("scope", ["read", "write"])
+async def test_validate_rejects_scopes_that_cannot_push(mock_session, scope):
+    """A read or write token reads fine but cannot send charges, odometer or trips."""
+    mock_session.request.return_value = MockClientResponse(
+        status=200, json_data={"scope": scope, "name": "Rémi"}
+    )
+
+    with pytest.raises(AutoLedgerScopeError) as exc:
+        await _client(mock_session).async_validate()
+    assert exc.value.scope == scope
+
+
+@pytest.mark.asyncio
+async def test_validate_falls_back_on_a_server_without_whoami(mock_session):
+    """A server older than the account route answers 404 there: the scope is unknown, not refused."""
+    mock_session.request.side_effect = [
+        MockClientResponse(status=404, text_data="Not Found"),
+        MockClientResponse(status=200, json_data=[]),
+    ]
+
+    assert await _client(mock_session).async_validate() == {}
+    assert called_urls(mock_session) == [WHOAMI_URL, VEHICLES_URL]
+
+
+@pytest.mark.asyncio
+async def test_validate_404_on_both_routes_is_not_masked(mock_session):
+    """A server without the integration routes is reported as such."""
+    mock_session.request.return_value = MockClientResponse(status=404, text_data="Not Found")
+
+    with pytest.raises(AutoLedgerApiError) as exc:
+        await _client(mock_session, "http://autoledger.local:8080/").async_validate()
+    assert exc.value.status_code == 404
+    assert called_urls(mock_session) == [WHOAMI_URL, VEHICLES_URL]
+
+
+@pytest.mark.asyncio
+async def test_validate_timeout(mock_session):
     """Test connection timeout handling."""
     mock_session.request.side_effect = TimeoutError()
-    client = AutoLedgerApiClient("http://autoledger.local:8080", "test_key", mock_session)
 
     with pytest.raises(AutoLedgerTimeoutError):
-        await client.async_test_connection()
+        await _client(mock_session).async_validate()
 
 
 @pytest.mark.asyncio
-async def test_connection_network_error(mock_session):
+async def test_validate_network_error(mock_session):
     """Test connection network/connector error."""
     mock_session.request.side_effect = aiohttp.ClientConnectorError(
         connection_key=MagicMock(), os_error=OSError("Unreachable")
     )
-    client = AutoLedgerApiClient("http://autoledger.local:8080", "test_key", mock_session)
 
     with pytest.raises(AutoLedgerConnectionError):
-        await client.async_test_connection()
+        await _client(mock_session).async_validate()
 
 
 @pytest.mark.asyncio

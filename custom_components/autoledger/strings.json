@@ -18,16 +18,25 @@
           "api_key": "API Token",
           "verify_ssl": "Verify SSL Certificate"
         }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate AutoLedger",
+        "description": "AutoLedger at {host} no longer accepts the API token. Enter a new token.",
+        "data": {
+          "api_key": "API Token"
+        }
       }
     },
     "error": {
       "cannot_connect": "Failed to connect to the AutoLedger server. Check host URL.",
       "invalid_auth": "Authentication failed. Please verify your API token.",
-      "unknown": "Unexpected error occurred."
+      "unknown": "Unexpected error occurred.",
+      "invalid_scope": "This token cannot send data to AutoLedger. Create an API token with the 'ingest' or 'homeassistant' scope."
     },
     "abort": {
       "already_configured": "This AutoLedger server is already configured.",
-      "reconfigure_successful": "AutoLedger connection successfully updated."
+      "reconfigure_successful": "AutoLedger connection successfully updated.",
+      "reauth_successful": "Re-authentication succeeded."
     }
   },
   "options": {

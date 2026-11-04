@@ -107,6 +107,11 @@ if "homeassistant" not in sys.modules:
 
         ha.exceptions.HomeAssistantError = HomeAssistantError
 
+        class ConfigEntryAuthFailed(HomeAssistantError):
+            pass
+
+        ha.exceptions.ConfigEntryAuthFailed = ConfigEntryAuthFailed
+
         def callback(func):
             return func
 
@@ -230,10 +235,23 @@ if "homeassistant" not in sys.modules:
             def _get_reconfigure_entry(self):
                 return getattr(self, "_reconfigure_entry", None)
 
-            def async_update_reload_and_abort(self, entry, data_updates=None):
+            def _get_reauth_entry(self):
+                return getattr(self, "_reauth_entry", None)
+
+            def _async_current_entries(self):
+                return getattr(self, "_current_entries", [])
+
+            def async_update_reload_and_abort(self, entry, unique_id=None, data_updates=None):
                 if entry and data_updates:
                     entry.data.update(data_updates)
-                return {"type": "abort", "reason": "reconfigure_successful"}
+                if entry and unique_id is not None:
+                    entry.unique_id = unique_id
+                reason = (
+                    "reauth_successful"
+                    if getattr(self, "source", None) == "reauth"
+                    else "reconfigure_successful"
+                )
+                return {"type": "abort", "reason": reason}
 
             def async_show_form(
                 self, step_id, data_schema=None, errors=None, description_placeholders=None
@@ -291,6 +309,7 @@ if "homeassistant" not in sys.modules:
                 self.domain = domain
                 self.title = title
                 self.version = 1
+                self.unique_id = None
                 self.data = data or {}
                 self.options = options or {}
                 self.runtime_data = None
