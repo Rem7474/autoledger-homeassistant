@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import logging
+from types import MappingProxyType
 from typing import Any
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_registry as er
@@ -14,7 +15,9 @@ from homeassistant.helpers.storage import Store
 
 from .api import AutoLedgerApiClient
 from .const import (
+    AUTH_METHOD_TOKEN,
     CONF_API_KEY,
+    CONF_AUTH_METHOD,
     CONF_CHARGERS,
     CONF_HOST,
     CONF_VEHICLES,
@@ -27,6 +30,7 @@ from .coordinator import AutoLedgerDataUpdateCoordinator
 from .odometer_tracker import AutoLedgerOdometerTracker
 from .services import async_setup_services, async_unload_services
 from .session_tracker import AutoLedgerChargerTracker
+from .subentries import chargers_config, plan_subentries_from_options, vehicles_config
 from .trip_tracker import AutoLedgerTripTracker
 
 _LOGGER = logging.getLogger(__name__)
@@ -37,6 +41,47 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     """Set up the AutoLedger integration component."""
     hass.data.setdefault(DOMAIN, {})
+    return True
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Bring an entry created by an older version up to the current one.
+
+    Version 2 moves vehicles and charging stations from the options to
+    subentries and records how the entry authenticates. The entry id, the
+    entity unique ids and the names of the stored sessions do not change. The
+    version is raised last, so a migration interrupted halfway is replayed and
+    skips the subentries it had already created.
+    """
+    if entry.version > 2:
+        # Written by a newer version of the integration: do not guess its layout.
+        return False
+
+    if entry.version == 1:
+        existing = {(sub.subentry_type, sub.unique_id) for sub in entry.subentries.values()}
+        for subentry_type, unique_id, title, data in plan_subentries_from_options(entry.options):
+            if (subentry_type, unique_id) in existing:
+                continue
+            hass.config_entries.async_add_subentry(
+                entry,
+                ConfigSubentry(
+                    data=MappingProxyType(data),
+                    subentry_type=subentry_type,
+                    title=title,
+                    unique_id=unique_id,
+                ),
+            )
+        options = {
+            k: v for k, v in entry.options.items() if k not in (CONF_VEHICLES, CONF_CHARGERS)
+        }
+        hass.config_entries.async_update_entry(
+            entry,
+            data={**entry.data, CONF_AUTH_METHOD: AUTH_METHOD_TOKEN},
+            options=options,
+            version=2,
+        )
+        _LOGGER.info("Migrated AutoLedger entry %s to version 2", entry.entry_id)
+
     return True
 
 
@@ -54,8 +99,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         verify_ssl=verify_ssl,
     )
 
-    configured_vehicles = entry.options.get(CONF_VEHICLES, {})
-    configured_chargers = entry.options.get(CONF_CHARGERS, {})
+    configured_vehicles = vehicles_config(entry)
+    configured_chargers = chargers_config(entry)
 
     coordinator = AutoLedgerDataUpdateCoordinator(
         hass=hass,
@@ -100,22 +145,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         await tracker.async_setup()
         trackers[charger_id] = tracker
-
-    # Backward compatibility fallback for legacy vehicle-attached configs
-    if not configured_chargers:
-        for vehicle_id, vehicle_conf in configured_vehicles.items():
-            if vehicle_conf.get("charging_status_entity"):
-                tracker = AutoLedgerChargerTracker(
-                    hass=hass,
-                    client=client,
-                    charger_id=vehicle_id,
-                    config=vehicle_conf,
-                    vehicles_config=configured_vehicles,
-                    coordinator=coordinator,
-                    store=Store(hass, 1, f"{DOMAIN}.{entry.entry_id}.charger.{vehicle_id}"),
-                )
-                await tracker.async_setup()
-                trackers[vehicle_id] = tracker
 
     entry_data = {
         "client": client,

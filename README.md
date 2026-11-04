@@ -50,7 +50,7 @@ flowchart TD
         end
 
         subgraph Integration["Custom Component: autoledger"]
-            ConfigFlow["Decoupled Options Flow (Vehicles & Chargers)"]
+            ConfigFlow["Config flow + subentries (Vehicles & Chargers)"]
             ChargerTracker["AutoLedgerChargerTracker (Debounce & Vehicle Resolver)"]
             Coordinator["AutoLedgerDataUpdateCoordinator (15m Polling)"]
             APIClient["AutoLedgerApiClient (aiohttp)"]
@@ -109,10 +109,12 @@ flowchart TD
    - **Verify SSL Certificate**: Enable or disable according to your local setup.
 4. Click **Submit**. The integration validates the connection and the token scope immediately. If AutoLedger later stops accepting the token (revoked, expired), Home Assistant shows a **Re-authenticate** prompt on the integration card; enter a new token there.
 
-### 2. Manage Vehicles (`OptionsFlow` > 🚗 Manage Vehicles)
+### 2. Add vehicles (🚗 subentries)
 
-1. Click **Configure** on the AutoLedger integration card, then select **Manage Vehicles**.
-2. Click **Add a vehicle**.
+Vehicles and charging stations are listed on the integration card. Home Assistant 2025.3 or later is required.
+
+1. On the AutoLedger integration card, click **Add vehicle**. To change or delete one later, use the ⋮ menu of its row (**Reconfigure** / **Delete**).
+2. Pick the vehicle to add (the ones already configured are not offered).
 3. Select an AutoLedger vehicle synchronized from your server and optionally an associated Home Assistant Device to pre-fill entity fields.
 4. Map vehicle telemetry entities:
    - **Battery State of Charge (%)**: Vehicle battery percentage sensor (optional).
@@ -125,18 +127,18 @@ flowchart TD
 
 Each finished trip is sent to AutoLedger with its start/end time and position. The distance is never computed from GPS: it is the difference between the odometer readings at the start and end of the trip, and a trip without an odometer is recorded without a distance. When a point is inside a Home Assistant zone, the zone name is sent as the address; otherwise only the coordinates are sent (AutoLedger can resolve addresses if its reverse geocoding is enabled). Very short trips that end where they started are ignored, an unsent trip is retried every 5 minutes, and a trip in progress survives a Home Assistant restart.
 
-### 3. Manage Charging Stations (`OptionsFlow` > 🔌 Manage Charging Stations)
+### 3. Add charging stations (🔌 subentries)
 
-1. Click **Configure** > **Manage Charging Stations** > **Add a charging station**.
+1. On the AutoLedger integration card, click **Add charging station**.
 2. **Step 1: Station Hardware & Settings**:
    - **Charging Station Name**: Friendly name (e.g. `Wallbox Garage`, `Smart Plug Patio`).
    - **Charging Status Sensor**: Binary sensor, switch, or power sensor (W or kW with > 500W threshold) that activates when charging begins.
    - **Charging Energy Sensor (kWh)**: Energy sensor from your wallbox or sub-meter.
-   - **Energy Counter Mode**: `Total Increasing` (cumulative kWh) or `Session Energy` (resets per charge).
+   - **Energy Counter Mode**: `Total Increasing` (cumulative kWh) or `Session Energy` (resets per charge). Left empty, it is deduced from the sensor (`measurement` state class = per session).
    - **Solar Anti-Bounce Debounce (seconds)**: Delay timer before finalizing a session (15s - 300s, default: 60s).
    - **Default Location Tag**: Default location string sent to AutoLedger (default: `home`).
 3. **Step 2: Vehicle Assignment Strategy**:
-   - **Fixed**: Select a linked vehicle from your configured vehicles.
+   - **Fixed**: Select a linked vehicle from your configured vehicles (add a vehicle first).
    - **Dynamic Selector (input_select)**: Select an `input_select` or sensor entity indicating the vehicle currently connected.
    - **Automatic Correlation**: Automatically assigns the session to whichever vehicle is charging simultaneously.
    - **Unassigned / Multi-vehicle**: Sends `vehicle_id: null` to qualify the charge later in AutoLedger.
@@ -275,3 +277,7 @@ pytest
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## ⬆️ Upgrading from 1.x
+
+Version 2 stores vehicles and charging stations as Home Assistant *subentries* instead of options. The upgrade runs by itself the first time Home Assistant starts with the new version: every vehicle and charging station keeps its settings, its entities keep their ids and history, and a session in progress is resumed. A vehicle with a charging status sensor and no charging station, which version 1 charged on its own, becomes an explicit charging station with the same name. Take a Home Assistant backup before upgrading: an entry migrated to version 2 cannot be opened by version 1 again.

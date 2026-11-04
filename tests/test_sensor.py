@@ -16,7 +16,6 @@ from custom_components.autoledger.const import (
     ATTR_LAST_ERROR_MESSAGE,
     CONF_HOST,
     CONF_VEHICLE_NAME,
-    CONF_VEHICLES,
     DOMAIN,
     STATE_COOLING_DOWN,
     STATE_IDLE,
@@ -40,13 +39,7 @@ async def test_sensors_setup_entry(mock_hass):
     entry = ConfigEntry(
         entry_id="entry_sensor_test",
         data={CONF_HOST: "http://autoledger.local"},
-        options={
-            CONF_VEHICLES: {
-                vehicle_id: {
-                    CONF_VEHICLE_NAME: "Tesla Model Y",
-                }
-            }
-        },
+        vehicles={vehicle_id: {CONF_VEHICLE_NAME: "Tesla Model Y"}},
     )
 
     coordinator = MagicMock()
@@ -164,7 +157,7 @@ async def test_sensor_tracker_live_updates(mock_hass):
 @pytest.mark.asyncio
 async def test_decoupled_sensors_setup_entry(mock_hass):
     """Test decoupled setup with vehicle metrics sensors and charger sensors."""
-    from custom_components.autoledger.const import CONF_CHARGER_NAME, CONF_CHARGERS
+    from custom_components.autoledger.const import CONF_CHARGER_NAME
     from custom_components.autoledger.sensor import (
         AutoLedgerChargerChargingStateSensor,
         AutoLedgerChargerLastEnergySensor,
@@ -178,14 +171,8 @@ async def test_decoupled_sensors_setup_entry(mock_hass):
     entry = ConfigEntry(
         entry_id="entry_decoupled_test",
         data={CONF_HOST: "http://autoledger.local"},
-        options={
-            CONF_VEHICLES: {
-                vehicle_id: {CONF_VEHICLE_NAME: "Model Y"},
-            },
-            CONF_CHARGERS: {
-                charger_id: {CONF_CHARGER_NAME: "Wallbox Garage"},
-            },
-        },
+        vehicles={vehicle_id: {CONF_VEHICLE_NAME: "Model Y"}},
+        chargers={charger_id: {CONF_CHARGER_NAME: "Wallbox Garage"}},
     )
 
     coordinator = MagicMock()

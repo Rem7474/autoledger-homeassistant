@@ -10,8 +10,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_ODOMETER_ENTITY, CONF_VEHICLE_NAME, CONF_VEHICLES, DOMAIN
+from .const import CONF_ODOMETER_ENTITY, CONF_VEHICLE_NAME, DOMAIN
 from .odometer_tracker import AutoLedgerOdometerTracker
+from .subentries import vehicles_config
 
 
 async def async_setup_entry(
@@ -26,7 +27,7 @@ async def async_setup_entry(
         else hass.data[DOMAIN][entry.entry_id]
     )
     odometer_tracker: AutoLedgerOdometerTracker = data["odometer_tracker"]
-    configured_vehicles: dict[str, Any] = entry.options.get(CONF_VEHICLES, {})
+    configured_vehicles: dict[str, Any] = vehicles_config(entry)
     coordinator = data["coordinator"]
 
     entities: list[ButtonEntity] = []

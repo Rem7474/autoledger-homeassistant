@@ -62,6 +62,15 @@ async def async_get_config_entry_diagnostics(
             "title": entry.title,
             "data": async_redact_data(dict(entry.data), TO_REDACT),
             "options": async_redact_data(dict(entry.options), TO_REDACT),
+            "subentries": [
+                {
+                    "type": sub.subentry_type,
+                    "unique_id": sub.unique_id,
+                    "title": sub.title,
+                    "data": async_redact_data(dict(sub.data), TO_REDACT),
+                }
+                for sub in entry.subentries.values()
+            ],
         },
         "coordinator_data": coordinator.data if coordinator else None,
         "trackers": trackers_diagnostics,

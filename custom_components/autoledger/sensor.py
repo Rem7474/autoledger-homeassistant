@@ -28,11 +28,9 @@ from .const import (
     ATTR_PENDING_EVENTS_COUNT,
     ATTR_SESSION_START_TIME,
     CONF_CHARGER_NAME,
-    CONF_CHARGERS,
     CONF_ODOMETER_ENTITY,
     CONF_TRIP_LOCATION_ENTITY,
     CONF_VEHICLE_NAME,
-    CONF_VEHICLES,
     DOMAIN,
     STATE_COOLING_DOWN,
 )
@@ -47,6 +45,7 @@ from .read_sensors import (
     AutoLedgerRemindersOverdueSensor,
 )
 from .session_tracker import AutoLedgerChargerTracker
+from .subentries import chargers_config, vehicles_config
 from .trip_tracker import AutoLedgerTripTracker
 
 _LOGGER = logging.getLogger(__name__)
@@ -68,8 +67,8 @@ async def async_setup_entry(
     odometer_tracker = data.get("odometer_tracker")
     trip_tracker = data.get("trip_tracker")
 
-    configured_vehicles: dict[str, Any] = entry.options.get(CONF_VEHICLES, {})
-    configured_chargers: dict[str, Any] = entry.options.get(CONF_CHARGERS, {})
+    configured_vehicles: dict[str, Any] = vehicles_config(entry)
+    configured_chargers: dict[str, Any] = chargers_config(entry)
     entities: list[SensorEntity] = []
 
     # 1. Sensors per vehicle
