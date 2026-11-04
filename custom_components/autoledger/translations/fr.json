@@ -18,16 +18,25 @@
           "api_key": "Jeton API (Token)",
           "verify_ssl": "Vérifier le certificat SSL"
         }
+      },
+      "reauth_confirm": {
+        "title": "Réauthentifier AutoLedger",
+        "description": "AutoLedger sur {host} n'accepte plus le jeton d'API. Saisissez un nouveau jeton.",
+        "data": {
+          "api_key": "Jeton d'API"
+        }
       }
     },
     "error": {
       "cannot_connect": "Échec de connexion au serveur AutoLedger. Vérifiez l'URL de l'hôte.",
       "invalid_auth": "Authentification refusée. Veuillez vérifier votre jeton API.",
-      "unknown": "Une erreur inattendue est survenue."
+      "unknown": "Une erreur inattendue est survenue.",
+      "invalid_scope": "Ce jeton ne peut pas envoyer de données à AutoLedger. Créez un jeton d'API de scope « ingest » ou « homeassistant »."
     },
     "abort": {
       "already_configured": "Cette instance AutoLedger est déjà configurée.",
-      "reconfigure_successful": "Connexion à AutoLedger mise à jour avec succès."
+      "reconfigure_successful": "Connexion à AutoLedger mise à jour avec succès.",
+      "reauth_successful": "Réauthentification réussie."
     }
   },
   "options": {

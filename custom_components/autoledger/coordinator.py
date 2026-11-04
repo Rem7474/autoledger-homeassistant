@@ -7,9 +7,10 @@ from datetime import timedelta
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import AutoLedgerApiClient, AutoLedgerError
+from .api import AutoLedgerApiClient, AutoLedgerAuthError, AutoLedgerError
 from .const import DEFAULT_SCAN_INTERVAL_MINUTES, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -60,6 +61,8 @@ class AutoLedgerDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 try:
                     metrics = await self.client.async_get_vehicle_metrics(vehicle_id)
                     metrics_by_id[vehicle_id] = metrics
+                except AutoLedgerAuthError:
+                    raise
                 except AutoLedgerError as err:
                     _LOGGER.warning("Failed to update metrics for vehicle %s: %s", vehicle_id, err)
                     metrics_by_id[vehicle_id] = {}
@@ -75,6 +78,8 @@ class AutoLedgerDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "metrics": metrics_by_id,
             }
 
+        except AutoLedgerAuthError as err:
+            raise ConfigEntryAuthFailed(f"AutoLedger rejected the API token: {err}") from err
         except AutoLedgerError as err:
             raise UpdateFailed(f"AutoLedger API communication failed: {err}") from err
         except Exception as err:

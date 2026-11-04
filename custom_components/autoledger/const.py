@@ -72,6 +72,11 @@ MAX_DEBOUNCE_SECONDS = 300
 # Event types
 # Routes an API token opens on the AutoLedger server
 INTEGRATION_API = "/api/integrations/homeassistant"
+# Read API of the server (account, reminders, costs); opened by "read" and "homeassistant" tokens
+READ_API = "/api/integrations/v1"
+
+# Token scopes able to push events (charges, odometer, trips); "read" and "write" cannot
+PUSH_TOKEN_SCOPES = ("ingest", "homeassistant")
 
 EVENT_TYPE_CHARGING_SESSION_END = "charging_session_end"
 EVENT_TYPE_ODOMETER_UPDATE = "odometer_update"

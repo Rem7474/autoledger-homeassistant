@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Mapping
 from typing import Any
 
 import voluptuous as vol
@@ -20,6 +21,7 @@ from .api import (
     AutoLedgerApiClient,
     AutoLedgerAuthError,
     AutoLedgerConnectionError,
+    AutoLedgerScopeError,
     AutoLedgerTimeoutError,
 )
 from .const import (
@@ -182,6 +184,49 @@ def _validate_energy_sensor(hass: Any, entity_id: str | None) -> str | None:
     return None
 
 
+async def _async_validate_credentials(
+    hass: Any, host: str, api_key: str, verify_ssl: bool
+) -> tuple[str | None, dict[str, Any]]:
+    """Check a host/token pair. Returns (error key or None, account description)."""
+    client = AutoLedgerApiClient(
+        host=host,
+        api_key=api_key,
+        session=async_get_clientsession(hass),
+        verify_ssl=verify_ssl,
+    )
+    try:
+        account = await client.async_validate()
+    except AutoLedgerAuthError:
+        return "invalid_auth", {}
+    except AutoLedgerScopeError:
+        return "invalid_scope", {}
+    except (AutoLedgerConnectionError, AutoLedgerTimeoutError):
+        return "cannot_connect", {}
+    except Exception as err:
+        _LOGGER.exception("Unexpected exception while checking the AutoLedger credentials: %s", err)
+        return "unknown", {}
+    return None, account
+
+
+def _connection_schema(
+    host: str | None = None, api_key: str | None = None, verify_ssl: bool = DEFAULT_VERIFY_SSL
+) -> vol.Schema:
+    """Form schema of the connection step, prefilled with the current values."""
+    host_key = vol.Required(CONF_HOST, default=host) if host else vol.Required(CONF_HOST)
+    key_key = vol.Required(CONF_API_KEY, default=api_key) if api_key else vol.Required(CONF_API_KEY)
+    return vol.Schema(
+        {
+            host_key: selector.TextSelector(
+                selector.TextSelectorConfig(type=selector.TextSelectorType.URL)
+            ),
+            key_key: selector.TextSelector(
+                selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
+            ),
+            vol.Optional(CONF_VERIFY_SSL, default=verify_ssl): selector.BooleanSelector(),
+        }
+    )
+
+
 class AutoLedgerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for AutoLedger."""
 
@@ -196,28 +241,13 @@ class AutoLedgerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             api_key = user_input[CONF_API_KEY]
             verify_ssl = user_input.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
 
-            normalized_host = host.lower()
-            await self.async_set_unique_id(normalized_host)
+            await self.async_set_unique_id(host.lower())
             self._abort_if_unique_id_configured()
 
-            session = async_get_clientsession(self.hass)
-            client = AutoLedgerApiClient(
-                host=host,
-                api_key=api_key,
-                session=session,
-                verify_ssl=verify_ssl,
+            error, _account = await _async_validate_credentials(
+                self.hass, host, api_key, verify_ssl
             )
-
-            try:
-                await client.async_test_connection()
-            except AutoLedgerAuthError:
-                errors["base"] = "invalid_auth"
-            except (AutoLedgerConnectionError, AutoLedgerTimeoutError):
-                errors["base"] = "cannot_connect"
-            except Exception as err:
-                _LOGGER.exception("Unexpected exception during connection test: %s", err)
-                errors["base"] = "unknown"
-            else:
+            if error is None:
                 return self.async_create_entry(
                     title=f"AutoLedger ({host})",
                     data={
@@ -226,24 +256,11 @@ class AutoLedgerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_VERIFY_SSL: verify_ssl,
                     },
                 )
-
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_HOST): selector.TextSelector(
-                    selector.TextSelectorConfig(type=selector.TextSelectorType.URL)
-                ),
-                vol.Required(CONF_API_KEY): selector.TextSelector(
-                    selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
-                ),
-                vol.Optional(
-                    CONF_VERIFY_SSL, default=DEFAULT_VERIFY_SSL
-                ): selector.BooleanSelector(),
-            }
-        )
+            errors["base"] = error
 
         return self.async_show_form(
             step_id="user",
-            data_schema=schema,
+            data_schema=_connection_schema(),
             errors=errors,
         )
 
@@ -256,59 +273,73 @@ class AutoLedgerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             host = user_input[CONF_HOST].rstrip("/")
             api_key = user_input[CONF_API_KEY]
             verify_ssl = user_input.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
+            unique_id = host.lower()
 
-            session = async_get_clientsession(self.hass)
-            client = AutoLedgerApiClient(
-                host=host,
-                api_key=api_key,
-                session=session,
-                verify_ssl=verify_ssl,
+            if any(
+                other.entry_id != entry.entry_id and other.unique_id == unique_id
+                for other in self._async_current_entries()
+            ):
+                return self.async_abort(reason="already_configured")
+
+            error, _account = await _async_validate_credentials(
+                self.hass, host, api_key, verify_ssl
             )
-
-            try:
-                await client.async_test_connection()
-            except AutoLedgerAuthError:
-                errors["base"] = "invalid_auth"
-            except (AutoLedgerConnectionError, AutoLedgerTimeoutError):
-                errors["base"] = "cannot_connect"
-            except Exception as err:
-                _LOGGER.exception("Unexpected exception during reconfigure: %s", err)
-                errors["base"] = "unknown"
-            else:
+            if error is None:
                 return self.async_update_reload_and_abort(
                     entry,
+                    unique_id=unique_id,
                     data_updates={
                         CONF_HOST: host,
                         CONF_API_KEY: api_key,
                         CONF_VERIFY_SSL: verify_ssl,
                     },
                 )
-
-        initial_host = entry.data.get(CONF_HOST, "") if entry else ""
-        initial_key = entry.data.get(CONF_API_KEY, "") if entry else ""
-        initial_ssl = (
-            entry.data.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL) if entry else DEFAULT_VERIFY_SSL
-        )
-
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_HOST, default=initial_host): selector.TextSelector(
-                    selector.TextSelectorConfig(type=selector.TextSelectorType.URL)
-                ),
-                vol.Required(CONF_API_KEY, default=initial_key): selector.TextSelector(
-                    selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
-                ),
-                vol.Optional(
-                    CONF_VERIFY_SSL,
-                    default=initial_ssl,
-                ): selector.BooleanSelector(),
-            }
-        )
+            errors["base"] = error
 
         return self.async_show_form(
             step_id="reconfigure",
-            data_schema=schema,
+            data_schema=_connection_schema(
+                entry.data.get(CONF_HOST),
+                entry.data.get(CONF_API_KEY),
+                entry.data.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
+            ),
             errors=errors,
+        )
+
+    async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> FlowResult:
+        """Start re-authentication when the server stops accepting the token."""
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Ask for a new token for the server of the entry."""
+        errors: dict[str, str] = {}
+        entry = self._get_reauth_entry()
+        host = entry.data[CONF_HOST]
+
+        if user_input is not None:
+            api_key = user_input[CONF_API_KEY]
+            error, _account = await _async_validate_credentials(
+                self.hass, host, api_key, entry.data.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
+            )
+            if error is None:
+                return self.async_update_reload_and_abort(
+                    entry, data_updates={CONF_API_KEY: api_key}
+                )
+            errors["base"] = error
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_API_KEY): selector.TextSelector(
+                        selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
+                    ),
+                }
+            ),
+            errors=errors,
+            description_placeholders={"host": host},
         )
 
     @staticmethod
