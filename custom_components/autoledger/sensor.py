@@ -38,10 +38,12 @@ from .coordinator import AutoLedgerDataUpdateCoordinator
 from .odometer_tracker import AutoLedgerOdometerTracker
 from .read_sensors import (
     AutoLedgerBatteryHealthSensor,
+    AutoLedgerBudgetUsedSensor,
     AutoLedgerCompletenessSensor,
     AutoLedgerConsumptionFuelSensor,
     AutoLedgerConsumptionKwhSensor,
     AutoLedgerCostPerKmSensor,
+    AutoLedgerFleetMonthCostSensor,
     AutoLedgerLast12MonthsCostSensor,
     AutoLedgerLastChargePricePerKwhSensor,
     AutoLedgerLastRecordSensor,
@@ -208,6 +210,8 @@ async def async_setup_entry(
                 AutoLedgerTariffBandSensor,
                 AutoLedgerTariffNextChangeSensor,
                 AutoLedgerTariffNextPriceSensor,
+                AutoLedgerFleetMonthCostSensor,
+                AutoLedgerBudgetUsedSensor,
             )
         )
     else:

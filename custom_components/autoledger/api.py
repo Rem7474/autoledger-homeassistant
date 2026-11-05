@@ -236,6 +236,11 @@ class AutoLedgerApiClient:
         )
         return res if isinstance(res, dict) else {}
 
+    async def async_get_fleet(self) -> dict[str, Any]:
+        """Fetch the vehicles of the account side by side, the month totals and the budget."""
+        res = await self._request("GET", f"{READ_API}/fleet")
+        return res if isinstance(res, dict) else {}
+
     async def async_get_current_tariff(self) -> dict[str, Any]:
         """Fetch the electricity price in force now and its next change (default plan, read API)."""
         res = await self._request("GET", f"{READ_API}/tariff-plans/current")

@@ -8,6 +8,7 @@ from homeassistant.components.binary_sensor import BinarySensorDeviceClass, Bina
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -40,6 +41,7 @@ async def async_setup_entry(
             AutoLedgerDataGapsSensor(coordinator, entry, vehicle_id, name, device_info),
         ]
 
+    async_add_entities([AutoLedgerOverBudgetSensor(coordinator, entry)])
     async_add_vehicle_entities(entry, coordinator, async_add_entities, build)
 
 
@@ -135,3 +137,33 @@ class AutoLedgerMaintenanceOverdueSensor(
                 if item.get("status") == "overdue"
             ]
         }
+
+
+class AutoLedgerOverBudgetSensor(
+    CoordinatorEntity[AutoLedgerDataUpdateCoordinator], BinarySensorEntity
+):
+    """On once the month costs more than the monthly budget."""
+
+    _attr_entity_registry_enabled_default = False
+    _attr_device_class = BinarySensorDeviceClass.PROBLEM
+    _attr_icon = "mdi:cash-remove"
+    _attr_name = "AutoLedger Over Budget"
+
+    def __init__(self, coordinator: AutoLedgerDataUpdateCoordinator, entry: ConfigEntry) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{entry.entry_id}_fleet_over_budget"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name="AutoLedger",
+            manufacturer="AutoLedger",
+            model="Account",
+        )
+
+    @property
+    def is_on(self) -> bool | None:
+        """Return whether the budget is exceeded; unknown when no budget is set."""
+        fleet = (self.coordinator.data or {}).get("fleet")
+        budget = fleet.get("budget") if isinstance(fleet, dict) else None
+        used = budget.get("used_pct") if isinstance(budget, dict) else None
+        return used > 100 if isinstance(used, (int, float)) else None
