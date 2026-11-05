@@ -11,10 +11,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_VEHICLE_NAME, DOMAIN
+from .const import DOMAIN
 from .coordinator import AutoLedgerDataUpdateCoordinator
-from .sensor import _get_vehicle_device_info
-from .subentries import vehicles_config
+from .vehicles import ListedVehicleEntity, async_add_vehicle_entities, vehicle_device
 
 PARALLEL_UPDATES = 0
 
@@ -34,26 +33,15 @@ async def async_setup_entry(
     if not (coordinator.data and coordinator.data.get("read_access")):
         return
 
-    entities = []
-    for vehicle_id, vehicle_conf in vehicles_config(entry).items():
-        name = vehicle_conf.get(CONF_VEHICLE_NAME, f"Vehicle {vehicle_id}")
-        meta = coordinator.data.get("vehicles", {}).get(vehicle_id, {})
-        entities.append(
-            AutoLedgerDataGapsSensor(
-                coordinator,
-                entry,
-                vehicle_id,
-                name,
-                _get_vehicle_device_info(
-                    entry, vehicle_id, name, meta.get("make"), meta.get("model")
-                ),
-            )
-        )
-    async_add_entities(entities)
+    def build(vehicle_id: str) -> list[BinarySensorEntity]:
+        name, device_info = vehicle_device(entry, coordinator, vehicle_id)
+        return [AutoLedgerDataGapsSensor(coordinator, entry, vehicle_id, name, device_info)]
+
+    async_add_vehicle_entities(entry, coordinator, async_add_entities, build)
 
 
 class AutoLedgerDataGapsSensor(
-    CoordinatorEntity[AutoLedgerDataUpdateCoordinator], BinarySensorEntity
+    ListedVehicleEntity, CoordinatorEntity[AutoLedgerDataUpdateCoordinator], BinarySensorEntity
 ):
     """On when the records of the vehicle lack something that weakens its figures."""
 

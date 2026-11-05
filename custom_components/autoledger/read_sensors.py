@@ -13,6 +13,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import AutoLedgerDataUpdateCoordinator
+from .vehicles import ListedVehicleEntity
 
 PARALLEL_UPDATES = 0
 
@@ -47,7 +48,9 @@ def _day(value: str | None) -> date | None:
         return None
 
 
-class _VehicleReadSensor(CoordinatorEntity[AutoLedgerDataUpdateCoordinator], SensorEntity):
+class _VehicleReadSensor(
+    ListedVehicleEntity, CoordinatorEntity[AutoLedgerDataUpdateCoordinator], SensorEntity
+):
     """Base of the per-vehicle sensors fed by the read API."""
 
     _key: str
@@ -89,6 +92,7 @@ class AutoLedgerRemindersOverdueSensor(_VehicleReadSensor):
 
     _key = "reminders_overdue"
     _title = "Overdue Reminders"
+    _attr_entity_registry_enabled_default = False
     _attr_icon = "mdi:wrench-clock"
     _status = "overdue"
 
@@ -121,6 +125,7 @@ class AutoLedgerRemindersDueSoonSensor(AutoLedgerRemindersOverdueSensor):
 
     _key = "reminders_due_soon"
     _title = "Reminders Due Soon"
+    _attr_entity_registry_enabled_default = False
     _attr_icon = "mdi:wrench-outline"
     _status = "due_soon"
 
@@ -164,6 +169,7 @@ class AutoLedgerNextServiceDistanceSensor(_VehicleReadSensor):
 
     _key = "next_service_distance"
     _title = "Next Service Distance"
+    _attr_entity_registry_enabled_default = False
     _attr_device_class = SensorDeviceClass.DISTANCE
     _attr_native_unit_of_measurement = "km"
     _attr_suggested_display_precision = 0

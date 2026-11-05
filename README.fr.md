@@ -8,11 +8,12 @@ Elle envoie à AutoLedger les recharges, les relevés d'odomètre et les trajets
 
 ## Fonctionnalités
 
-- **Véhicules et bornes indépendants** : une borne peut charger plusieurs véhicules.
+- **Tous les véhicules, automatiquement** : chaque véhicule que le jeton voit est un appareil Home Assistant avec ses entités de coûts, rappels, consommation et lacunes de données. Rien à ajouter à la main ; un véhicule créé dans AutoLedger apparaît au rafraîchissement suivant.
+- **L'envoi est facultatif et par véhicule** : on ne lie un véhicule que pour envoyer ce que Home Assistant sait de lui (odomètre, batterie, trajets, recharges). Les bornes sont indépendantes : une borne peut charger plusieurs véhicules.
 - **Quatre stratégies d'affectation d'une borne** : véhicule fixe, sélecteur dynamique (`input_select`), corrélation automatique (le véhicule qui signale une charge), ou non affecté (la recharge arrive dans « Recharges à qualifier » d'AutoLedger).
 - **Anti-rebond solaire** : une pause due à un nuage ne coupe pas la session. Un délai réglable (15 à 300 s, 60 s par défaut) regroupe les interruptions en une seule recharge.
 - **Trajets** : début et fin, position, distance déduite de l'odomètre (jamais du GPS).
-- **Capteurs alimentés par AutoLedger** (jeton avec le scope `homeassistant`, absents avec un jeton `ingest` seul) :
+- **Capteurs alimentés par AutoLedger** (jeton avec le scope `homeassistant`, absents avec un jeton `ingest` seul ; `_overdue_reminders`, `_reminders_due_soon` et `_next_service_distance` sont créés désactivés) :
   - véhicule : `sensor.<véhicule>_overdue_reminders`, `_reminders_due_soon`, `_next_service_date`, `_next_service_distance`, `_cost_this_month`, `_cost_per_km`, `_consumption` (kWh/100 km), `_fuel_consumption` (L/100 km), `binary_sensor.<véhicule>_data_gaps` (diagnostic) ;
   - compte : `sensor.autoledger_charges_to_qualify`.
   - Un chiffre qu'AutoLedger ne sait pas encore calculer vaut `unknown`, jamais 0.
@@ -45,9 +46,11 @@ Home Assistant 2025.3 ou plus récent est requis.
 
 Si AutoLedger n'accepte plus les identifiants (jeton révoqué, autorisation supprimée ou inutilisée pendant 90 jours), Home Assistant affiche **Se ré-authentifier** sur la carte de l'intégration. Pour passer un jeton existant à OAuth : **Reconfigurer** puis **Autoriser dans AutoLedger** ; véhicules, bornes et entités sont conservés.
 
-### 2. Véhicules (sous-entrées)
+### 2. Envoyer les données d'un véhicule (sous-entrées, facultatif)
 
-Sur la carte de l'intégration, **Ajouter un véhicule** ; ⋮ sur une ligne pour **Reconfigurer** ou **Supprimer**. Choisissez un véhicule du serveur (ceux déjà configurés ne sont pas proposés), éventuellement un appareil Home Assistant pour préremplir les champs, puis associez les entités :
+La lecture est automatique : chaque véhicule que le jeton voit est un appareil avec ses entités dès que l'intégration est connectée. Pour en masquer un, désactivez son appareil dans Home Assistant ; pour restreindre ce que Home Assistant peut lire, limitez le jeton à certains véhicules dans AutoLedger. Un véhicule que le serveur ne liste plus garde son appareil, et ses entités sont `indisponibles`.
+
+L'envoi se configure par véhicule, car vous seul savez quelle entité Home Assistant correspond à quelle voiture. Sur la carte de l'intégration, **Envoyer les données d'un véhicule** ; ⋮ sur une ligne pour **Reconfigurer** ou **Supprimer** (supprimer arrête l'envoi ; le véhicule reste dans Home Assistant avec ses chiffres). Choisissez le véhicule (ceux déjà liés ne sont pas proposés), éventuellement un appareil Home Assistant pour préremplir les champs, puis associez les entités :
 
 - **Niveau de batterie (%)** (facultatif).
 - **Odomètre (km)** (facultatif) : ajoute le bouton **Envoyer l'odomètre** et le capteur **Dernière synchro odomètre**.
@@ -83,7 +86,13 @@ Chaque trajet terminé est envoyé avec ses heures et ses positions. La distance
 - `autoledger.submit_charge` : envoie une recharge à la main ou depuis une automatisation (`vehicle_id`, `energy_kwh`, `cost`, `odometer_km`, `soc_start`, `soc_end`, `location`).
 - `autoledger.log_trip` : enregistre un trajet (`vehicle_id`, `start_time`, `end_time` obligatoires ; positions, adresses et odomètres facultatifs).
 
-## Mise à jour depuis la 1.x
+## Mise à jour
+
+### De la 2.0 à la 2.1
+
+Chaque véhicule que le jeton voit devient un appareil avec ses entités de lecture, y compris les véhicules qui n'avaient pas été ajoutés. Les entités existantes gardent leurs identifiants et leur historique. Trois capteurs secondaires (`overdue_reminders`, `reminders_due_soon`, `next_service_distance`) sont créés désactivés, pour les nouveaux véhicules seulement : ceux déjà enregistrés gardent leur état. L'entrée « véhicule » de la carte ne commande que l'envoi ; rien n'est à migrer. Les chiffres de tous les véhicules viennent d'un seul appel au résumé d'AutoLedger (un serveur plus ancien est lu véhicule par véhicule).
+
+### De la 1.x
 
 La version 2 enregistre les véhicules et les bornes comme des *sous-entrées* au lieu d'options. La migration se fait seule au premier démarrage : chaque véhicule et chaque borne garde ses réglages, les entités gardent leurs identifiants et leur historique, une session en cours reprend. Un véhicule qui avait un capteur d'état de charge sans borne, que la version 1 chargeait seul, devient une borne explicite du même nom. **Faites une sauvegarde de Home Assistant avant de mettre à jour** : une entrée migrée en version 2 ne peut plus être ouverte par la version 1.
 

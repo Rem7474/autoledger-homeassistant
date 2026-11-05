@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 from homeassistant.config_entries import ConfigSubentryData
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.autoledger.const import (
@@ -95,7 +96,7 @@ SUMMARY = {
 }
 
 
-def _entry() -> MockConfigEntry:
+def _entry(*, linked: bool = True) -> MockConfigEntry:
     return MockConfigEntry(
         domain=DOMAIN,
         unique_id=HOST,
@@ -108,13 +109,44 @@ def _entry() -> MockConfigEntry:
                 title="Family",
                 unique_id="vehicle:v1",
             )
-        ],
+        ]
+        if linked
+        else [],
     )
 
 
-async def _setup(hass: HomeAssistant, account: dict, summary: dict = SUMMARY) -> MockConfigEntry:
-    entry = _entry()
+# Entities created disabled; a registry entry made beforehand is enabled, like one a user enabled
+SECONDARY = {
+    "reminders_overdue": "family_overdue_reminders",
+    "reminders_due_soon": "family_reminders_due_soon",
+    "next_service_distance": "family_next_service_distance",
+}
+
+
+def _enable_secondary(hass: HomeAssistant, entry: MockConfigEntry) -> None:
+    registry = er.async_get(hass)
+    for key, object_id in SECONDARY.items():
+        registry.async_get_or_create(
+            "sensor",
+            DOMAIN,
+            f"{entry.entry_id}_v1_{key}",
+            config_entry=entry,
+            suggested_object_id=object_id,
+        )
+
+
+async def _setup(
+    hass: HomeAssistant,
+    account: dict,
+    summary: dict = SUMMARY,
+    *,
+    entry: MockConfigEntry | None = None,
+    enable_secondary: bool = True,
+) -> MockConfigEntry:
+    entry = entry or _entry()
     entry.add_to_hass(hass)
+    if enable_secondary:
+        _enable_secondary(hass, entry)
     with (
         patch(f"{API}.async_get_vehicles", new=AsyncMock(return_value=VEHICLES)),
         patch(f"{API}.async_get_vehicle_metrics", new=AsyncMock(return_value={})),
@@ -230,3 +262,210 @@ async def test_an_old_server_raises_a_repair_issue_until_it_is_updated(hass: Hom
     ):
         await coordinator.async_refresh()
     assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is None
+
+
+# What a server with the one-call summary returns for a plug-in hybrid
+FULL_SUMMARY = {
+    "vehicles": [
+        {
+            **SUMMARY["vehicles"][0],
+            "month": "2026-11",
+            "month_cost": {"amount": "161.20", "currency": "EUR"},
+            "month_costs": {
+                "energy": {"amount": "41.20", "currency": "EUR"},
+                "maintenance": {"amount": "120.00", "currency": "EUR"},
+                "total": {"amount": "161.20", "currency": "EUR"},
+            },
+            "last_charge": {
+                "date": "2026-11-03T18:00:00Z",
+                "cost": {"amount": "7.35", "currency": "EUR"},
+                "energy_kwh": 31.5,
+                "duration_minutes": 95,
+            },
+            "cost_per_100km": {"amount": "4.20", "currency": "EUR"},
+        }
+    ]
+}
+WORK = {"id": "v2", "make": "Renault", "model": "Clio", "name": "Work"}
+
+
+def _server(vehicles: list[dict], summary: dict, metrics: dict | None = None):
+    """Patch the API; the returned dict holds the mocks to inspect which calls were made."""
+    mocks = {
+        "vehicles": AsyncMock(return_value=vehicles),
+        "metrics": AsyncMock(return_value=metrics or {}),
+        "account": AsyncMock(return_value={"scope": "homeassistant"}),
+        "reminders": AsyncMock(return_value=FLEET_REMINDERS),
+        "monthly": AsyncMock(return_value=MONTHLY),
+        "summary": AsyncMock(return_value=summary),
+    }
+    names = {
+        "vehicles": "async_get_vehicles",
+        "metrics": "async_get_vehicle_metrics",
+        "account": "async_get_account",
+        "reminders": "async_get_fleet_reminders",
+        "monthly": "async_get_monthly_costs",
+        "summary": "async_get_summary",
+    }
+    patches = [patch(f"{API}.{names[key]}", new=mock) for key, mock in mocks.items()]
+    return mocks, patches
+
+
+async def _start(hass, entry, vehicles, summary, metrics=None):
+    mocks, patches = _server(vehicles, summary, metrics)
+    for p in patches:
+        p.start()
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    return mocks, patches
+
+
+async def _refresh(hass, entry) -> None:
+    await hass.data[DOMAIN][entry.entry_id]["coordinator"].async_refresh()
+    await hass.async_block_till_done()
+
+
+async def test_a_vehicle_nobody_linked_still_gets_its_figures(hass: HomeAssistant) -> None:
+    """No subentry: the server's vehicle is a device with its entities anyway."""
+    from homeassistant.helpers import device_registry as dr
+
+    entry = _entry(linked=False)
+    _, patches = await _start(hass, entry, VEHICLES, FULL_SUMMARY)
+    try:
+        assert float(_state(hass, "cost_per_km").state) == 0.184
+        assert _state(hass, "cost_this_month").state == "161.20"
+        assert hass.states.get("binary_sensor.family_data_gaps") is not None
+        device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, f"{entry.entry_id}_v1")})
+        assert device is not None and device.name == "Family"
+        assert device.manufacturer == "Tesla"
+    finally:
+        for p in patches:
+            p.stop()
+
+
+async def test_secondary_sensors_are_created_disabled(hass: HomeAssistant) -> None:
+    entry = _entry(linked=False)
+    _, patches = await _start(hass, entry, VEHICLES, FULL_SUMMARY)
+    try:
+        registry = er.async_get(hass)
+        for key in SECONDARY:
+            reg = registry.async_get(
+                registry.async_get_entity_id("sensor", DOMAIN, f"{entry.entry_id}_v1_{key}")
+            )
+            assert reg.disabled_by is er.RegistryEntryDisabler.INTEGRATION
+        # the figures that matter stay on
+        for name in ("cost_this_month", "cost_per_km", "next_service_date", "consumption"):
+            assert _state(hass, name).state != "unavailable"
+    finally:
+        for p in patches:
+            p.stop()
+
+
+async def test_the_summary_carries_the_charge_and_the_month_without_other_calls(
+    hass: HomeAssistant,
+) -> None:
+    entry = _entry(linked=False)
+    mocks, patches = await _start(hass, entry, VEHICLES, FULL_SUMMARY)
+    try:
+        assert float(_state(hass, "last_charge_cost").state) == 7.35
+        assert _state(hass, "last_charge_cost").attributes["energy_kwh"] == 31.5
+        assert _state(hass, "last_charge_cost").attributes["duration_minutes"] == 95
+        assert float(_state(hass, "cost_per_100km").state) == 4.2
+        assert _state(hass, "cost_this_month").attributes["energy"] == "41.20"
+        # one call per cycle covers the fleet
+        mocks["metrics"].assert_not_called()
+        mocks["monthly"].assert_not_called()
+        mocks["summary"].assert_awaited_once()
+    finally:
+        for p in patches:
+            p.stop()
+
+
+async def test_a_server_without_the_new_summary_fields_is_asked_vehicle_by_vehicle(
+    hass: HomeAssistant,
+) -> None:
+    entry = _entry(linked=False)
+    metrics = {"currency": "EUR", "last_charge_cost": 6.5, "cost_per_100km": 3.9}
+    mocks, patches = await _start(hass, entry, VEHICLES, SUMMARY, metrics)
+    try:
+        assert float(_state(hass, "last_charge_cost").state) == 6.5
+        assert float(_state(hass, "cost_per_100km").state) == 3.9
+        assert _state(hass, "cost_this_month").state == "161.20"
+        mocks["metrics"].assert_awaited_once_with("v1")
+        mocks["monthly"].assert_awaited_once_with("v1")
+    finally:
+        for p in patches:
+            p.stop()
+
+
+async def test_a_vehicle_created_later_gets_its_entities_on_the_next_refresh(
+    hass: HomeAssistant,
+) -> None:
+    entry = _entry(linked=False)
+    mocks, patches = await _start(hass, entry, VEHICLES, FULL_SUMMARY)
+    try:
+        assert hass.states.get("sensor.work_cost_per_100km") is None
+
+        mocks["vehicles"].return_value = [*VEHICLES, WORK]
+        mocks["summary"].return_value = {
+            "vehicles": [
+                *FULL_SUMMARY["vehicles"],
+                {
+                    "vehicle_id": "v2",
+                    "powertrain": "ICE",
+                    "currency": "EUR",
+                    "month": "2026-11",
+                    "month_costs": {"total": {"amount": "60.00", "currency": "EUR"}},
+                    "last_charge": None,
+                    "cost_per_100km": {"amount": "8.10", "currency": "EUR"},
+                    "consumption_l_100km": 5.6,
+                    "data_gaps": 0,
+                },
+            ],
+        }
+        await _refresh(hass, entry)
+
+        assert float(hass.states.get("sensor.work_cost_per_100km").state) == 8.1
+        assert hass.states.get("sensor.work_cost_this_month").state == "60.00"
+        assert hass.states.get("sensor.work_fuel_consumption").state == "5.6"
+        # a combustion vehicle has no charge to report
+        assert hass.states.get("sensor.work_last_charge_cost") is None
+    finally:
+        for p in patches:
+            p.stop()
+
+
+async def test_a_vehicle_the_server_stops_listing_keeps_its_entities_unavailable(
+    hass: HomeAssistant,
+) -> None:
+    from homeassistant.helpers import device_registry as dr
+
+    entry = _entry(linked=False)
+    mocks, patches = await _start(hass, entry, [*VEHICLES, WORK], FULL_SUMMARY)
+    try:
+        assert hass.states.get("sensor.work_cost_per_100km") is not None
+
+        mocks["vehicles"].return_value = VEHICLES  # a token limited to one vehicle, or a deletion
+        await _refresh(hass, entry)
+
+        assert hass.states.get("sensor.work_cost_per_100km").state == "unavailable"
+        assert _state(hass, "cost_per_km").state != "unavailable"
+        assert (
+            dr.async_get(hass).async_get_device(identifiers={(DOMAIN, f"{entry.entry_id}_v2")})
+            is not None
+        )
+    finally:
+        for p in patches:
+            p.stop()
+
+
+async def test_a_limited_token_only_gets_the_vehicles_it_sees(hass: HomeAssistant) -> None:
+    entry = _entry(linked=False)
+    _, patches = await _start(hass, entry, VEHICLES, FULL_SUMMARY)  # the server hides "Work"
+    try:
+        assert hass.states.get("sensor.work_cost_per_100km") is None
+        assert hass.states.get("sensor.work_cost_this_month") is None
+    finally:
+        for p in patches:
+            p.stop()

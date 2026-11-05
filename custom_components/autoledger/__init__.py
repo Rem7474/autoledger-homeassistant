@@ -30,6 +30,7 @@ from .services import async_setup_services, async_unload_services
 from .session_tracker import AutoLedgerChargerTracker
 from .subentries import chargers_config, plan_subentries_from_options, vehicles_config
 from .trip_tracker import AutoLedgerTripTracker
+from .vehicles import is_vehicle_figure
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -196,6 +197,9 @@ def _remove_stale_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """
     registry = er.async_get(hass)
     for reg_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
+        if is_vehicle_figure(reg_entry.unique_id):
+            # A vehicle the server stopped listing keeps its figures, unavailable
+            continue
         state = hass.states.get(reg_entry.entity_id)
         if state is not None and state.attributes.get("restored"):
             registry.async_remove(reg_entry.entity_id)

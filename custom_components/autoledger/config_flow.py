@@ -941,24 +941,34 @@ class ChargerSubentryFlow(config_entries.ConfigSubentryFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
         """Fixed assignment: the vehicle every charge of the station belongs to."""
-        vehicles = vehicles_config(self._get_entry())
-        if not vehicles:
-            return self.async_abort(reason="no_vehicle_configured")
-
         if user_input is not None:
             self._draft[CONF_LINKED_VEHICLE_ID] = user_input[CONF_LINKED_VEHICLE_ID]
             return self._finish()
 
+        entry = self._get_entry()
+        # Every vehicle of the account, not only the ones Home Assistant sends data for
+        labels: dict[str, str] = {
+            vid: str(conf.get(CONF_VEHICLE_NAME) or f"Vehicle {vid}")
+            for vid, conf in vehicles_config(entry).items()
+        }
+        try:
+            for vehicle in await build_client(self.hass, entry).async_get_vehicles():
+                if str(vehicle.get("id", "")):
+                    labels[str(vehicle["id"])] = _vehicle_label(vehicle)
+        except AutoLedgerAuthError:
+            return self.async_abort(reason="invalid_auth")
+        except Exception as err:  # noqa: BLE001 - the vehicles already linked are still offered
+            _LOGGER.warning("Could not fetch vehicles from AutoLedger: %s", err)
+        if not labels:
+            return self.async_abort(reason="no_vehicle_configured")
+
         options = [
-            selector.SelectOptionDict(
-                value=vid, label=str(conf.get(CONF_VEHICLE_NAME) or f"Vehicle {vid}")
-            )
-            for vid, conf in vehicles.items()
+            selector.SelectOptionDict(value=vid, label=label) for vid, label in labels.items()
         ]
         linked = self._draft.get(CONF_LINKED_VEHICLE_ID)
         key = (
             vol.Required(CONF_LINKED_VEHICLE_ID, default=linked)
-            if linked in vehicles
+            if linked in labels
             else vol.Required(CONF_LINKED_VEHICLE_ID)
         )
         return self.async_show_form(
