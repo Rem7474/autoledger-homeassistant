@@ -24,6 +24,7 @@ async def test_services_registration_and_calls(mock_hass):
     assert mock_hass.services.has_service(DOMAIN, SERVICE_SUBMIT_CHARGE)
     assert mock_hass.services.has_service(DOMAIN, "sync_odometer")
     assert mock_hass.services.has_service(DOMAIN, "log_trip")
+    assert mock_hass.services.has_service(DOMAIN, "estimate_charge")
 
     # Mock coordinator, tracker, odometer_tracker, and client
     coordinator = MagicMock()
@@ -96,6 +97,7 @@ async def test_services_registration_and_calls(mock_hass):
     await async_unload_services(mock_hass)
     assert not mock_hass.services.has_service(DOMAIN, SERVICE_SYNC)
     assert not mock_hass.services.has_service(DOMAIN, SERVICE_SUBMIT_CHARGE)
+    assert not mock_hass.services.has_service(DOMAIN, "estimate_charge")
     assert not mock_hass.services.has_service(DOMAIN, "sync_odometer")
     assert not mock_hass.services.has_service(DOMAIN, "log_trip")
 

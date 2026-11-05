@@ -130,6 +130,7 @@ if "homeassistant" not in sys.modules:
         ha.core.Event = MagicMock
         ha.core.EventStateChangedData = MagicMock
         ha.core.ServiceCall = MagicMock
+        ha.core.SupportsResponse = MagicMock()
 
         def utcnow():
             return datetime.now(UTC)
@@ -148,7 +149,20 @@ if "homeassistant" not in sys.modules:
         def async_track_state_change_event(hass, entity_ids, action):
             return MagicMock()
 
+        def async_track_point_in_time(hass, action, point_in_time):
+            return MagicMock()
+
+        def parse_datetime(value):
+            from datetime import datetime
+
+            try:
+                return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            except ValueError:
+                return None
+
+        ha.util.dt.parse_datetime = parse_datetime
         ha.helpers.event.async_call_later = async_call_later
+        ha.helpers.event.async_track_point_in_time = async_track_point_in_time
         ha.helpers.event.async_track_state_change_event = async_track_state_change_event
 
         class UpdateFailed(HomeAssistantError):
@@ -618,7 +632,14 @@ class MockServices:
     def has_service(self, domain: str, service: str) -> bool:
         return (domain, service) in self._services
 
-    def async_register(self, domain: str, service: str, handler: Any, schema: Any = None) -> None:
+    def async_register(
+        self,
+        domain: str,
+        service: str,
+        handler: Any,
+        schema: Any = None,
+        supports_response: Any = None,
+    ) -> None:
         self._services[(domain, service)] = handler
 
     def async_remove(self, domain: str, service: str) -> None:

@@ -17,10 +17,11 @@ Elle envoie à AutoLedger les recharges, les relevés d'odomètre et les trajets
   - véhicule : `sensor.<véhicule>_overdue_reminders`, `_reminders_due_soon`, `_next_service_date`, `_next_service_distance`, `_cost_this_month`, `_cost_per_km`, `_consumption` (kWh/100 km), `_fuel_consumption` (L/100 km), `binary_sensor.<véhicule>_data_gaps` (diagnostic) ;
   - véhicule, actifs par défaut : `sensor.<véhicule>_odometer` (le dernier relevé connu d'AutoLedger) et `binary_sensor.<véhicule>_maintenance_overdue` (allumé tant qu'un rappel a dépassé sa limite ; les rappels en retard sont listés dans les attributs) ;
   - véhicule, créés désactivés, un groupe par section que le serveur ne calcule que sur demande : pneus (`sensor.<véhicule>_tire_wear`, `_tire_distance_left`, `_tire_replacement_date`), batterie (`sensor.<véhicule>_battery_health`, véhicules rechargeables), possession (`sensor.<véhicule>_full_cost_per_km`, `_estimated_value`) et sources (`sensor.<véhicule>_last_record`, `_teslamate_last_sync`, diagnostic). L'intégration ne demande un groupe au serveur que tant qu'une de ses entités est activée : une entité désactivée ne coûte rien au serveur, et en activer une recharge l'intégration. Elles valent `unknown` sur un serveur plus ancien que ces sections ;
+  - compte, prix de l'électricité du forfait par défaut : `sensor.autoledger_electricity_price` (actif par défaut, dans la devise du forfait par kWh, avec le nom du forfait en attribut), et créés désactivés `sensor.autoledger_electricity_band`, `sensor.autoledger_electricity_price_next_change` (un horodatage, `unknown` pour un forfait unique) et `sensor.autoledger_electricity_next_price`. Les règles du forfait restent sur le serveur, Home Assistant n'en lit que le résultat ; il relit le prix au moment où il change, ce qui permet des automatisations « recharger quand c'est pas cher ». Le prix n'est lu que tant qu'une de ces entités est activée ;
   - véhicule, créés désactivés (à activer dans les paramètres de l'entité) : `sensor.<véhicule>_distance_this_month`, `_net_cost_this_month` (le coût du mois une fois les passagers des covoiturages remboursés, avec le revenu dans les attributs), `_cost_last_12_months`, `_last_charge_price_per_kwh` (véhicules rechargeables) et `_data_completeness` (diagnostic). Ils demandent un serveur AutoLedger qui les fournit et valent `unknown` sur un serveur plus ancien ;
   - compte : `sensor.autoledger_charges_to_qualify`.
   - Un chiffre qu'AutoLedger ne sait pas encore calculer vaut `unknown`, jamais 0.
-- **Services** : `autoledger.sync`, `autoledger.submit_charge`, `autoledger.log_trip`.
+- **Services** : `autoledger.sync`, `autoledger.submit_charge`, `autoledger.log_trip`, `autoledger.estimate_charge`.
 
 ## Installation
 
@@ -87,6 +88,7 @@ Chaque trajet terminé est envoyé avec ses heures et ses positions. La distance
 
 - `autoledger.sync` : rafraîchit immédiatement les données (`entry_id` facultatif).
 - `autoledger.submit_charge` : envoie une recharge à la main ou depuis une automatisation (`vehicle_id`, `energy_kwh`, `cost`, `odometer_km`, `soc_start`, `soc_end`, `location`).
+- `autoledger.estimate_charge` : chiffre une recharge à domicile avec les forfaits du compte et renvoie le coût, le forfait utilisé et la répartition par tranche (`energy_kwh` et `duration_minutes` obligatoires ; `start` et `vehicle_id` facultatifs). Rien n'est enregistré ; l'action renvoie une réponse, à récupérer avec `response_variable`.
 - `autoledger.log_trip` : enregistre un trajet (`vehicle_id`, `start_time`, `end_time` obligatoires ; positions, adresses et odomètres facultatifs).
 
 ## Mise à jour

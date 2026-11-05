@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import voluptuous as vol
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.util import dt as dt_util
 
+from .api import AutoLedgerError
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -17,6 +20,7 @@ SERVICE_SYNC = "sync"
 SERVICE_SUBMIT_CHARGE = "submit_charge"
 SERVICE_SYNC_ODOMETER = "sync_odometer"
 SERVICE_LOG_TRIP = "log_trip"
+SERVICE_ESTIMATE_CHARGE = "estimate_charge"
 
 SERVICE_SYNC_SCHEMA = vol.Schema(
     {
@@ -58,6 +62,16 @@ SERVICE_LOG_TRIP_SCHEMA = vol.Schema(
         vol.Optional("end_address"): cv.string,
         vol.Optional("start_odometer_km"): vol.Coerce(float),
         vol.Optional("end_odometer_km"): vol.Coerce(float),
+    }
+)
+
+SERVICE_ESTIMATE_CHARGE_SCHEMA = vol.Schema(
+    {
+        vol.Required("energy_kwh"): vol.All(vol.Coerce(float), vol.Range(min=0.01, max=1000)),
+        vol.Required("duration_minutes"): vol.All(vol.Coerce(int), vol.Range(min=1, max=10080)),
+        vol.Optional("start"): cv.datetime,
+        vol.Optional("vehicle_id"): cv.string,
+        vol.Optional("entry_id"): cv.string,
     }
 )
 
@@ -201,6 +215,35 @@ async def async_setup_services(hass: HomeAssistant) -> None:
 
         _LOGGER.error("Cannot log trip: No active AutoLedger entry found")
 
+    async def async_handle_estimate_charge(call: ServiceCall) -> dict[str, Any]:
+        """Price a charge at home with the plans of the account, without recording anything."""
+        data = call.data
+        entry_id = data.get("entry_id")
+        for e_id, entry_data in hass.data.get(DOMAIN, {}).items():
+            client = entry_data.get("client")
+            if client is None or (entry_id and e_id != entry_id):
+                continue
+            start = data.get("start")
+            try:
+                return await client.async_estimate_charge(
+                    data["energy_kwh"],
+                    data["duration_minutes"],
+                    start=dt_util.as_local(start).isoformat() if start else None,
+                    vehicle_id=data.get("vehicle_id"),
+                )
+            except AutoLedgerError as err:
+                raise HomeAssistantError(f"AutoLedger could not price the charge: {err}") from err
+        raise HomeAssistantError("No AutoLedger entry is set up to price the charge")
+
+    if not hass.services.has_service(DOMAIN, SERVICE_ESTIMATE_CHARGE):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_ESTIMATE_CHARGE,
+            async_handle_estimate_charge,
+            schema=SERVICE_ESTIMATE_CHARGE_SCHEMA,
+            supports_response=SupportsResponse.ONLY,
+        )
+
     if not hass.services.has_service(DOMAIN, SERVICE_LOG_TRIP):
         hass.services.async_register(
             DOMAIN,
@@ -250,3 +293,6 @@ async def async_unload_services(hass: HomeAssistant) -> None:
 
     if hass.services.has_service(DOMAIN, SERVICE_LOG_TRIP):
         hass.services.async_remove(DOMAIN, SERVICE_LOG_TRIP)
+
+    if hass.services.has_service(DOMAIN, SERVICE_ESTIMATE_CHARGE):
+        hass.services.async_remove(DOMAIN, SERVICE_ESTIMATE_CHARGE)

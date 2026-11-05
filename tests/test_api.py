@@ -80,6 +80,28 @@ async def test_summary_asks_for_the_sections_by_name_only_when_given(mock_sessio
 
 
 @pytest.mark.asyncio
+async def test_the_current_tariff_and_the_estimate_use_the_read_routes(mock_session):
+    """The price now has no parameter; the estimate sends only what was given."""
+    mock_session.request.return_value = MockClientResponse(status=200, json_data={"priced": True})
+    client = _client(mock_session)
+
+    assert await client.async_get_current_tariff() == {"priced": True}
+    await client.async_estimate_charge(32.5, 240)
+    await client.async_estimate_charge(10, 60, start="2026-11-05T22:00:00+01:00", vehicle_id="v1")
+
+    tariff, bare, full = mock_session.request.call_args_list
+    assert tariff.kwargs["url"].endswith("/api/integrations/v1/tariff-plans/current")
+    assert bare.kwargs["url"].endswith("/api/integrations/v1/charge-estimate")
+    assert bare.kwargs["params"] == {"energy_kwh": 32.5, "duration_minutes": 240}
+    assert full.kwargs["params"] == {
+        "energy_kwh": 10,
+        "duration_minutes": 60,
+        "start": "2026-11-05T22:00:00+01:00",
+        "vehicle_id": "v1",
+    }
+
+
+@pytest.mark.asyncio
 async def test_validate_reads_the_account_of_the_token(mock_session):
     """A homeassistant token is described by whoami and needs no other call."""
     account = {"scope": "homeassistant", "name": "Rémi", "server_version": "1.60.0"}

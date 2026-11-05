@@ -33,11 +33,13 @@ Connect your Home Assistant instance to AutoLedger to automatically detect EV ch
   - Vehicle, on by default: `sensor.<vehicle>_odometer` (the last reading AutoLedger holds) and `binary_sensor.<vehicle>_maintenance_overdue` (on while a reminder is past its limit; the overdue reminders are listed in the attributes)
   - Vehicle, created disabled (enable them from the entity settings): `sensor.<vehicle>_distance_this_month`, `sensor.<vehicle>_net_cost_this_month` (the month cost once the passengers of the carpools have paid, with the carpool revenue in the attributes), `sensor.<vehicle>_cost_last_12_months`, `sensor.<vehicle>_last_charge_price_per_kwh` (plug-in vehicles) and `sensor.<vehicle>_data_completeness` (diagnostic). They need an AutoLedger server that reports them and read `unknown` on an older one
   - Vehicle, created disabled, one group per section the server computes only when asked: tires (`sensor.<vehicle>_tire_wear`, `_tire_distance_left`, `_tire_replacement_date`), battery (`sensor.<vehicle>_battery_health`, plug-in vehicles), ownership (`sensor.<vehicle>_full_cost_per_km`, `_estimated_value`) and sources (`sensor.<vehicle>_last_record`, `_teslamate_last_sync`, diagnostic). The integration asks the server for a group only while one of its entities is enabled, so a disabled entity adds nothing to the server's work; enabling one reloads the integration. They read `unknown` on a server older than these sections
+  - Account, electricity price of the default plan: `sensor.autoledger_electricity_price` (on by default, in the currency of the plan per kWh, with the plan name in the attributes), and created disabled `sensor.autoledger_electricity_band`, `sensor.autoledger_electricity_price_next_change` (a timestamp, unknown for a flat plan) and `sensor.autoledger_electricity_next_price`. The server holds the rules of the plan, so Home Assistant only reads the result; it reads the price again at the moment it changes, which makes "charge when it is cheap" automations possible. The price is read only while one of these entities is enabled
   - Vehicle diagnostic: `binary_sensor.<vehicle>_data_gaps` (on when records are missing that weaken the figures; attributes give the count and the completeness percentage)
   - Account: `sensor.autoledger_charges_to_qualify` (charging sessions pushed from Home Assistant that no vehicle claimed yet)
 - **Native HA Services**:
   - `autoledger.sync`: Force an immediate synchronization with the AutoLedger server.
   - `autoledger.submit_charge`: Manually log or automate charging session submissions from HA scripts.
+  - `autoledger.estimate_charge`: Price a charge at home with the plans of the account (returns the response).
 
 ---
 
@@ -212,6 +214,18 @@ data:
 ### Service `autoledger.log_trip`
 
 Logs a trip by hand: `vehicle_id`, `start_time` and `end_time` are required; start/end latitude and longitude, addresses and start/end odometer (km) are optional. The distance is the odometer difference; without odometer values the trip has no distance.
+
+### Action `autoledger.estimate_charge`
+
+Prices a charge at home with the electricity plans of the AutoLedger account and returns the cost, the plan used and the bands the energy was split between. `energy_kwh` and `duration_minutes` are required; `start` (now by default) and `vehicle_id` (the plan assigned to that vehicle, else the default plan) are optional. Nothing is recorded. The action returns a response, so use it with `response_variable`:
+
+```yaml
+action: autoledger.estimate_charge
+data:
+  energy_kwh: 32.5
+  duration_minutes: 240
+response_variable: estimate
+```
 
 ### Service `autoledger.submit_charge`
 Manually push a charging session or trigger submissions via external automations / NFC tags.
