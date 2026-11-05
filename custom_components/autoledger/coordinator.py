@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers.event import async_track_point_in_time
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .api import AutoLedgerApiClient, AutoLedgerAuthError, AutoLedgerError
 from .const import (
@@ -21,6 +23,7 @@ from .const import (
     ISSUE_SERVER_TOO_OLD,
     MIN_SERVER_VERSION,
     READ_TOKEN_SCOPES,
+    TARIFF_KEYS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -83,6 +86,7 @@ class AutoLedgerDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Whether the token can read the figures (costs, reminders); decided once per entry load
         self._read_access: bool | None = None
         self._read_data: dict[str, Any] = {}
+        self._price_change_cancel: Any = None
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from AutoLedger API and sync periodic telemetry."""
@@ -99,7 +103,10 @@ class AutoLedgerDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         self.odometer_tracker.set_last_synced_odometer(str(vid), float(backend_odo))
 
             read_access = await self._async_fetch_read_data(list(vehicles_by_id))
+            tariff = await self._async_fetch_tariff() if read_access else None
+            self._schedule_price_change(tariff)
             return {
+                "tariff": tariff,
                 "vehicles": vehicles_by_id,
                 "metrics": await self._async_vehicle_metrics(vehicles_by_id),
                 "read_access": read_access,
@@ -214,22 +221,87 @@ class AutoLedgerDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 metrics_by_id[vehicle_id] = {}
         return metrics_by_id
 
+    def _enabled_keys(self) -> set[str]:
+        """What the enabled entities of the entry are made of: their unique id without the entry.
+
+        A vehicle figure reads ``<vehicle>_<key>``, an account figure ``<key>``.
+        """
+        registry = er.async_get(self.hass)
+        prefix = f"{self.entry_id}_"
+        return {
+            entity.unique_id.removeprefix(prefix)
+            for entity in er.async_entries_for_config_entry(registry, self.entry_id)
+            if entity.disabled_by is None and entity.unique_id.startswith(prefix)
+        }
+
+    @staticmethod
+    def _has_key(enabled: set[str], keys: tuple[str, ...]) -> bool:
+        return any(rest == key or rest.endswith(f"_{key}") for rest in enabled for key in keys)
+
     def _enabled_data_groups(self) -> list[str]:
         """Opt-in sections of the summary that an enabled entity needs.
 
         A disabled entity costs the server nothing: enabling one reloads the entry, so the
         next refresh asks for its section.
         """
+        enabled = self._enabled_keys()
+        return [group for group, keys in DATA_GROUPS.items() if self._has_key(enabled, keys)]
+
+    def _tariff_wanted(self) -> bool:
+        """Whether an entity of the price is enabled, or none was created yet.
+
+        The price is on by default: on the first refresh of a new entry the registry does not
+        hold it yet, and it must not wait for the next poll to show a value.
+        """
         registry = er.async_get(self.hass)
         prefix = f"{self.entry_id}_"
-        keys = {
-            entity.unique_id.split("_", 2)[2]
+        known = {
+            entity.unique_id.removeprefix(prefix)
             for entity in er.async_entries_for_config_entry(registry, self.entry_id)
-            if entity.disabled_by is None
-            and entity.unique_id.startswith(prefix)
-            and entity.unique_id.count("_") >= 2
+            if entity.unique_id.startswith(prefix)
         }
-        return [group for group, group_keys in DATA_GROUPS.items() if keys.intersection(group_keys)]
+        return not self._has_key(known, TARIFF_KEYS) or self._has_key(
+            self._enabled_keys(), TARIFF_KEYS
+        )
+
+    async def _async_fetch_tariff(self) -> dict[str, Any] | None:
+        """The price of electricity now, read only while one of its entities is enabled.
+
+        A server older than the route, or a failure, leaves the entities unknown.
+        """
+        if not self._tariff_wanted():
+            return None
+        try:
+            return await self.client.async_get_current_tariff()
+        except AutoLedgerAuthError:
+            raise
+        except AutoLedgerError as err:
+            _LOGGER.warning("Failed to read the current electricity price: %s", err)
+            return None
+
+    def _schedule_price_change(self, tariff: dict[str, Any] | None) -> None:
+        """Refresh when the price changes, instead of showing the old one until the next poll."""
+        if self._price_change_cancel:
+            self._price_change_cancel()
+            self._price_change_cancel = None
+        change = (tariff or {}).get("next_change")
+        when = dt_util.parse_datetime(change["at"]) if isinstance(change, dict) else None
+        if when is None or when <= dt_util.utcnow():
+            return
+
+        @callback
+        def _refresh(_now: datetime) -> None:
+            self._price_change_cancel = None
+            self.hass.async_create_task(self.async_request_refresh())
+
+        self._price_change_cancel = async_track_point_in_time(self.hass, _refresh, when)
+
+    async def async_shutdown(self) -> None:
+        """Stop the refresh planned for the next price change."""
+        if self._price_change_cancel:
+            self._price_change_cancel()
+            self._price_change_cancel = None
+        await super().async_shutdown()
 
     def _check_server_version(self, version: Any) -> None:
         """Raise a repair issue while the server is older than the routes the integration reads."""

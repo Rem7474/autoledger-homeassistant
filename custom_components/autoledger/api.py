@@ -236,6 +236,28 @@ class AutoLedgerApiClient:
         )
         return res if isinstance(res, dict) else {}
 
+    async def async_get_current_tariff(self) -> dict[str, Any]:
+        """Fetch the electricity price in force now and its next change (default plan, read API)."""
+        res = await self._request("GET", f"{READ_API}/tariff-plans/current")
+        return res if isinstance(res, dict) else {}
+
+    async def async_estimate_charge(
+        self,
+        energy_kwh: float,
+        duration_minutes: int,
+        *,
+        start: str | None = None,
+        vehicle_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Price a charge at home with the plans of the account; nothing is recorded (read API)."""
+        params: dict[str, Any] = {"energy_kwh": energy_kwh, "duration_minutes": duration_minutes}
+        if start:
+            params["start"] = start
+        if vehicle_id:
+            params["vehicle_id"] = vehicle_id
+        res = await self._request("GET", f"{READ_API}/charge-estimate", params=params)
+        return res if isinstance(res, dict) else {}
+
     async def async_get_monthly_costs(self, vehicle_id: str) -> dict[str, Any]:
         """Fetch the month-by-month costs of a vehicle, the month in progress last (read API)."""
         res = await self._request("GET", f"{READ_API}/vehicles/{vehicle_id}/monthly-costs")

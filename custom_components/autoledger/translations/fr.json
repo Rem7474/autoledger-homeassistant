@@ -195,6 +195,10 @@
     "log_trip": {
       "name": "Enregistrer un trajet",
       "description": "Enregistre manuellement un trajet avec ses positions de départ et d'arrivée. La distance provient des valeurs d'odomètre."
+    },
+    "estimate_charge": {
+      "name": "Estimer le coût d'une recharge",
+      "description": "Chiffre une recharge à domicile avec les forfaits d'électricité du compte AutoLedger et renvoie le coût, le forfait utilisé et les tranches entre lesquelles l'énergie est répartie. Rien n'est enregistré."
     }
   },
   "issues": {

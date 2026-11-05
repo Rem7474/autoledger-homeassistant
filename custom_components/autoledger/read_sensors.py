@@ -639,3 +639,128 @@ class AutoLedgerPendingChargesSensor(
         """Return the number of charging sessions waiting for a vehicle."""
         value = (self.coordinator.data or {}).get("account", {}).get("pending_charges")
         return value if isinstance(value, int) else None
+
+
+class _TariffSensor(CoordinatorEntity[AutoLedgerDataUpdateCoordinator], SensorEntity):
+    """A figure of the electricity price of the account (its default plan)."""
+
+    _key: str
+    _title: str
+
+    def __init__(self, coordinator: AutoLedgerDataUpdateCoordinator, entry: ConfigEntry) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = f"AutoLedger {self._title}"
+        self._attr_unique_id = f"{entry.entry_id}_{self._key}"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name="AutoLedger",
+            manufacturer="AutoLedger",
+            model="Account",
+        )
+
+    @property
+    def _tariff(self) -> dict[str, Any]:
+        tariff = (self.coordinator.data or {}).get("tariff")
+        return tariff if isinstance(tariff, dict) else {}
+
+    @property
+    def _now(self) -> dict[str, Any]:
+        now = self._tariff.get("now")
+        return now if isinstance(now, dict) else {}
+
+    @property
+    def _next(self) -> dict[str, Any]:
+        change = self._tariff.get("next_change")
+        return change if isinstance(change, dict) else {}
+
+
+class _TariffPriceSensor(_TariffSensor):
+    """A price per kWh, in the currency of the plan."""
+
+    _attr_suggested_display_precision = 4
+
+    def _price(self) -> dict[str, Any] | None:
+        raise NotImplementedError
+
+    @property
+    def native_unit_of_measurement(self) -> str | None:
+        """Return the currency of the plan per kWh."""
+        price = self._price()
+        currency = price.get("currency") if price else None
+        return f"{currency}/kWh" if currency else None
+
+    @property
+    def native_value(self) -> Decimal | None:
+        """Return the price; unknown when no plan prices the moment."""
+        return _amount(self._price())
+
+
+class AutoLedgerTariffPriceSensor(_TariffPriceSensor):
+    """What a kWh costs at home right now."""
+
+    _key = "tariff_price"
+    _title = "Electricity Price"
+    _attr_icon = "mdi:flash"
+
+    def _price(self) -> dict[str, Any] | None:
+        price = self._now.get("price_per_kwh")
+        return price if isinstance(price, dict) else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Give the plan the price comes from, and why there is none when it is unknown."""
+        plan = self._tariff.get("plan")
+        attributes: dict[str, Any] = {"plan": plan.get("name")} if isinstance(plan, dict) else {}
+        if self._tariff.get("unpriced_reason"):
+            attributes["unpriced_reason"] = self._tariff["unpriced_reason"]
+        return attributes
+
+
+class AutoLedgerTariffBandSensor(_TariffSensor):
+    """Name of the band in force."""
+
+    _key = "tariff_band"
+    _title = "Electricity Band"
+    _attr_entity_registry_enabled_default = False
+    _attr_icon = "mdi:clock-outline"
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the band; unknown when no plan prices the moment."""
+        band = self._now.get("band")
+        return band if isinstance(band, str) else None
+
+
+class AutoLedgerTariffNextChangeSensor(_TariffSensor):
+    """When the price changes next."""
+
+    _key = "tariff_next_change"
+    _title = "Electricity Price Next Change"
+    _attr_entity_registry_enabled_default = False
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    @property
+    def native_value(self) -> datetime | None:
+        """Return the instant; unknown for a flat plan."""
+        at = self._next.get("at")
+        return dt_util.parse_datetime(at) if isinstance(at, str) else None
+
+
+class AutoLedgerTariffNextPriceSensor(_TariffPriceSensor):
+    """The price from the next change on."""
+
+    _key = "tariff_next_price"
+    _title = "Electricity Next Price"
+    _attr_entity_registry_enabled_default = False
+    _attr_icon = "mdi:flash-outline"
+
+    def _price(self) -> dict[str, Any] | None:
+        price = self._next.get("price_per_kwh")
+        return price if isinstance(price, dict) else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Give the band that starts at the change."""
+        band = self._next.get("band")
+        return {"band": band} if band else {}

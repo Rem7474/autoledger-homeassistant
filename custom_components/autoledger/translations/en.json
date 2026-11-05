@@ -195,6 +195,10 @@
     "log_trip": {
       "name": "Log Trip",
       "description": "Manually log a trip with its start and end position. The distance comes from the odometer values."
+    },
+    "estimate_charge": {
+      "name": "Estimate Charge Cost",
+      "description": "Prices a charge at home with the electricity plans of the AutoLedger account and returns the cost, the plan used and the bands the energy was split between. Nothing is recorded."
     }
   },
   "issues": {

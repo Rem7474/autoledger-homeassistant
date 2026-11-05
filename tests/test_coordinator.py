@@ -30,6 +30,7 @@ def _client(**overrides):
     client.async_get_fleet_reminders = AsyncMock(return_value={"vehicles": []})
     client.async_get_monthly_costs = AsyncMock(return_value={"months": []})
     client.async_get_summary = AsyncMock(return_value={"vehicles": []})
+    client.async_get_current_tariff = AsyncMock(return_value={})
     for name, value in overrides.items():
         setattr(client, name, value)
     return client

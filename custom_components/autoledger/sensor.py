@@ -55,6 +55,10 @@ from .read_sensors import (
     AutoLedgerPendingChargesSensor,
     AutoLedgerRemindersDueSoonSensor,
     AutoLedgerRemindersOverdueSensor,
+    AutoLedgerTariffBandSensor,
+    AutoLedgerTariffNextChangeSensor,
+    AutoLedgerTariffNextPriceSensor,
+    AutoLedgerTariffPriceSensor,
     AutoLedgerTeslaMateLastSyncSensor,
     AutoLedgerTiresRemainingDistanceSensor,
     AutoLedgerTiresReplacementDateSensor,
@@ -197,6 +201,15 @@ async def async_setup_entry(
 
     if coordinator.data and coordinator.data.get("read_access"):
         entities.append(AutoLedgerPendingChargesSensor(coordinator, entry))
+        entities.extend(
+            sensor_cls(coordinator, entry)
+            for sensor_cls in (
+                AutoLedgerTariffPriceSensor,
+                AutoLedgerTariffBandSensor,
+                AutoLedgerTariffNextChangeSensor,
+                AutoLedgerTariffNextPriceSensor,
+            )
+        )
     else:
         _LOGGER.info(
             "The API token cannot read the AutoLedger figures: reminder and cost sensors are "
