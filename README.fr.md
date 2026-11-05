@@ -15,6 +15,8 @@ Elle envoie à AutoLedger les recharges, les relevés d'odomètre et les trajets
 - **Trajets** : début et fin, position, distance déduite de l'odomètre (jamais du GPS).
 - **Capteurs alimentés par AutoLedger** (jeton avec le scope `homeassistant`, absents avec un jeton `ingest` seul ; `_overdue_reminders`, `_reminders_due_soon` et `_next_service_distance` sont créés désactivés) :
   - véhicule : `sensor.<véhicule>_overdue_reminders`, `_reminders_due_soon`, `_next_service_date`, `_next_service_distance`, `_cost_this_month`, `_cost_per_km`, `_consumption` (kWh/100 km), `_fuel_consumption` (L/100 km), `binary_sensor.<véhicule>_data_gaps` (diagnostic) ;
+  - véhicule, actifs par défaut : `sensor.<véhicule>_odometer` (le dernier relevé connu d'AutoLedger) et `binary_sensor.<véhicule>_maintenance_overdue` (allumé tant qu'un rappel a dépassé sa limite ; les rappels en retard sont listés dans les attributs) ;
+  - véhicule, créés désactivés (à activer dans les paramètres de l'entité) : `sensor.<véhicule>_distance_this_month`, `_net_cost_this_month` (le coût du mois une fois les passagers des covoiturages remboursés, avec le revenu dans les attributs), `_cost_last_12_months`, `_last_charge_price_per_kwh` (véhicules rechargeables) et `_data_completeness` (diagnostic). Ils demandent un serveur AutoLedger qui les fournit et valent `unknown` sur un serveur plus ancien ;
   - compte : `sensor.autoledger_charges_to_qualify`.
   - Un chiffre qu'AutoLedger ne sait pas encore calculer vaut `unknown`, jamais 0.
 - **Services** : `autoledger.sync`, `autoledger.submit_charge`, `autoledger.log_trip`.

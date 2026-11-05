@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.components.binary_sensor import BinarySensorEntity
+from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
@@ -35,7 +35,10 @@ async def async_setup_entry(
 
     def build(vehicle_id: str) -> list[BinarySensorEntity]:
         name, device_info = vehicle_device(entry, coordinator, vehicle_id)
-        return [AutoLedgerDataGapsSensor(coordinator, entry, vehicle_id, name, device_info)]
+        return [
+            AutoLedgerMaintenanceOverdueSensor(coordinator, entry, vehicle_id, name, device_info),
+            AutoLedgerDataGapsSensor(coordinator, entry, vehicle_id, name, device_info),
+        ]
 
     async_add_vehicle_entities(entry, coordinator, async_add_entities, build)
 
@@ -82,4 +85,53 @@ class AutoLedgerDataGapsSensor(
         return {
             "data_gaps": summary.get("data_gaps"),
             "completeness_pct": summary.get("completeness_pct"),
+        }
+
+
+class AutoLedgerMaintenanceOverdueSensor(
+    ListedVehicleEntity, CoordinatorEntity[AutoLedgerDataUpdateCoordinator], BinarySensorEntity
+):
+    """On while at least one maintenance reminder of the vehicle is past its limit."""
+
+    _attr_device_class = BinarySensorDeviceClass.PROBLEM
+    _attr_icon = "mdi:wrench-clock"
+
+    def __init__(
+        self,
+        coordinator: AutoLedgerDataUpdateCoordinator,
+        entry: ConfigEntry,
+        vehicle_id: str,
+        vehicle_name: str,
+        device_info: Any,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._vehicle_id = vehicle_id
+        self._attr_name = f"{vehicle_name} Maintenance Overdue"
+        self._attr_unique_id = f"{entry.entry_id}_{vehicle_id}_maintenance_overdue"
+        self._attr_device_info = device_info
+
+    @property
+    def _reminders(self) -> dict[str, Any]:
+        return (self.coordinator.data or {}).get("reminders", {}).get(self._vehicle_id, {})
+
+    @property
+    def is_on(self) -> bool | None:
+        """Return whether a reminder is overdue; unknown while the server gave no count."""
+        overdue = self._reminders.get("overdue")
+        return overdue > 0 if isinstance(overdue, int) else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """List the overdue reminders."""
+        return {
+            "reminders": [
+                {
+                    "title": item.get("title"),
+                    "category": item.get("category"),
+                    "due_date": item.get("due_date"),
+                }
+                for item in self._reminders.get("reminders", [])
+                if item.get("status") == "overdue"
+            ]
         }

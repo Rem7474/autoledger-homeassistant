@@ -32,12 +32,20 @@ VEHICLE_FIGURE_KEYS = (
     "consumption_kwh_100km",
     "consumption_l_100km",
     "data_gaps",
+    "odometer",
+    "completeness",
+    "month_distance",
+    "month_net",
+    "last_12_months_cost",
+    "last_charge_price_per_kwh",
+    "maintenance_overdue",
 )
 
 
 def is_vehicle_figure(unique_id: str | None) -> bool:
-    """Whether a unique id is one of the server-fed entities of a vehicle."""
-    return bool(unique_id) and unique_id.endswith(tuple(f"_{key}" for key in VEHICLE_FIGURE_KEYS))
+    """Whether a unique id (``<entry>_<vehicle>_<key>``) is a server-fed entity of a vehicle."""
+    parts = (unique_id or "").split("_", 2)
+    return len(parts) == 3 and parts[2] in VEHICLE_FIGURE_KEYS
 
 
 def vehicle_device_info(
