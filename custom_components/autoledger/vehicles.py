@@ -39,6 +39,7 @@ VEHICLE_FIGURE_KEYS = (
     "last_12_months_cost",
     "last_charge_price_per_kwh",
     "maintenance_overdue",
+    "reminders_calendar",
     "tires_wear",
     "tires_remaining_distance",
     "tires_replacement_date",

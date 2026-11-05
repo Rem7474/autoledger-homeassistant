@@ -123,6 +123,7 @@ ISSUE_READ_ONLY_ACCESS = "read_only_access"
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
     Platform.BUTTON,
+    Platform.CALENDAR,
     Platform.SENSOR,
 ]
 
