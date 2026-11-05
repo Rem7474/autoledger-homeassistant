@@ -15,8 +15,8 @@ Connect your Home Assistant instance to AutoLedger to automatically detect EV ch
 
 ## ⚡ Key Features
 
-- **Decoupled Architecture**: Configure Vehicles and Charging Stations / Energy Meters independently. One residential charger can charge multiple cars!
-- **Multi-Vehicle Support**: Associate as many vehicles from your AutoLedger instance as needed.
+- **Every vehicle, automatically**: each vehicle the token can see is a Home Assistant device with its cost, reminder, consumption and data-gap entities. Nothing to add by hand; a vehicle created in AutoLedger appears on the next refresh.
+- **Sending is optional and per vehicle**: link a vehicle only to send what Home Assistant knows about it (odometer, battery, trips, charges). Charging Stations / Energy Meters are configured independently: one residential charger can charge multiple cars.
 - **Assisted HA Device Discovery**: Select your car device (Tesla, MG iSmart, Renault, OBD-II, etc.) to pre-fill telemetry entities.
 - **Dedicated Charging Stations & Sub-meters**: Link wallboxes or energy monitors (Wallbox, Easee, Shelly Pro EM, Zaptec, etc.). Supports both **Total Increasing (cumulative kWh)** and **Session Energy** counter modes.
 - **4 Vehicle Assignment Strategies**:
@@ -114,13 +114,15 @@ flowchart TD
 
 To move an existing token connection to OAuth, use **Reconfigure** on the integration card and choose **Authorize in AutoLedger**: vehicles, charging stations and entities are kept.
 
-### 2. Add vehicles (🚗 subentries)
+### 2. Send the data of a vehicle (🚗 subentries, optional)
 
-Vehicles and charging stations are listed on the integration card. Home Assistant 2025.3 or later is required.
+Reading is automatic: every vehicle the token can see is a device with its entities as soon as the integration is connected. To hide one, disable its device in Home Assistant; to restrict what Home Assistant can read, limit the token to some vehicles in AutoLedger. A vehicle the server stops listing keeps its device, and its entities read `unavailable`.
 
-1. On the AutoLedger integration card, click **Add vehicle**. To change or delete one later, use the ⋮ menu of its row (**Reconfigure** / **Delete**).
-2. Pick the vehicle to add (the ones already configured are not offered).
-3. Select an AutoLedger vehicle synchronized from your server and optionally an associated Home Assistant Device to pre-fill entity fields.
+Sending is configured per vehicle, because only you know which Home Assistant entity belongs to which car. The linked vehicles and the charging stations are listed on the integration card. Home Assistant 2025.3 or later is required.
+
+1. On the AutoLedger integration card, click **Send the data of a vehicle**. To change or stop it later, use the ⋮ menu of its row (**Reconfigure** / **Delete**). Deleting it stops the sending; the vehicle stays in Home Assistant with its figures.
+2. Pick the vehicle (the ones already linked are not offered).
+3. Optionally select the associated Home Assistant Device to pre-fill entity fields.
 4. Map vehicle telemetry entities:
    - **Battery State of Charge (%)**: Vehicle battery percentage sensor (optional).
    - **Vehicle Odometer (km)**: Vehicle distance sensor (optional). With it set, the vehicle device gets a **Send Odometer** button (pushes the current reading even when it has not advanced) and a **Last Odometer Sync** timestamp sensor.
@@ -143,7 +145,7 @@ Each finished trip is sent to AutoLedger with its start/end time and position. T
    - **Solar Anti-Bounce Debounce (seconds)**: Delay timer before finalizing a session (15s - 300s, default: 60s).
    - **Default Location Tag**: Default location string sent to AutoLedger (default: `home`).
 3. **Step 2: Vehicle Assignment Strategy**:
-   - **Fixed**: Select a linked vehicle from your configured vehicles (add a vehicle first).
+   - **Fixed**: Select any vehicle of your AutoLedger account; it does not have to be linked for sending first.
    - **Dynamic Selector (input_select)**: Select an `input_select` or sensor entity indicating the vehicle currently connected.
    - **Automatic Correlation**: Automatically assigns the session to whichever vehicle is charging simultaneously.
    - **Unassigned / Multi-vehicle**: Sends `vehicle_id: null` to qualify the charge later in AutoLedger.
@@ -172,6 +174,8 @@ Standard energy loggers often register multiple tiny sessions of a few minutes, 
 ## 📊 Exposed Sensors
 
 ### Vehicle Entities
+The main figures are enabled: cost this month, cost per km, consumption, next service date, data gaps, last charge cost and cost per 100 km. The secondary ones (`overdue_reminders`, `reminders_due_soon`, `next_service_distance`) are created disabled so a large fleet does not flood the entity list; enable them from the entity settings. The last charge cost is created for vehicles that can be plugged in.
+
 | Sensor Entity ID | Device Class | Unit | Description |
 |---|---|---|---|
 | `sensor.<vehicle>_last_charge_cost` | `monetary` | `€` / `$` | Total financial cost of the last charging session. |
@@ -287,6 +291,12 @@ pytest
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## ⬆️ Upgrading from 1.x
+## ⬆️ Upgrading
+
+### From 2.0 to 2.1
+
+Every vehicle the token sees becomes a device with its read entities, including the vehicles that had not been added. Existing entities keep their ids and history. The three secondary sensors above are created disabled for the new vehicles only: the ones already registered keep their state. The vehicle entry of the integration card only controls what Home Assistant sends; nothing has to be migrated. The figures of all vehicles come from one call to the AutoLedger summary (a server that predates it is read vehicle by vehicle).
+
+### From 1.x
 
 Version 2 stores vehicles and charging stations as Home Assistant *subentries* instead of options. The upgrade runs by itself the first time Home Assistant starts with the new version: every vehicle and charging station keeps its settings, its entities keep their ids and history, and a session in progress is resumed. A vehicle with a charging status sensor and no charging station, which version 1 charged on its own, becomes an explicit charging station with the same name. Take a Home Assistant backup before upgrading: an entry migrated to version 2 cannot be opened by version 1 again.

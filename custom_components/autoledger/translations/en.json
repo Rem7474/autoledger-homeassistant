@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Connect to AutoLedger",
-        "description": "Authorize Home Assistant from your AutoLedger account, or paste an API token.",
+        "description": "Authorize Home Assistant from your AutoLedger account, or paste an API token. Your vehicles then appear in Home Assistant by themselves; sending what Home Assistant knows about a vehicle is set up afterwards, from the integration card.",
         "menu_options": {
           "oauth": "Authorize in AutoLedger (recommended)",
           "token": "Use an API token"
@@ -74,22 +74,22 @@
   },
   "config_subentries": {
     "vehicle": {
-      "entry_type": "Vehicle",
+      "entry_type": "Vehicle data sent to AutoLedger",
       "initiate_flow": {
-        "user": "Add vehicle",
-        "reconfigure": "Reconfigure vehicle"
+        "user": "Send the data of a vehicle",
+        "reconfigure": "Reconfigure the data sent"
       },
       "step": {
         "user": {
-          "title": "Add a vehicle",
-          "description": "Pick the AutoLedger vehicle. Choosing its Home Assistant device lets the next step suggest the sensors.",
+          "title": "Send the data of a vehicle",
+          "description": "Every vehicle of your AutoLedger account is already in Home Assistant with its figures. Pick one to also send what Home Assistant knows about it: odometer, battery, trips and charges. Choosing its Home Assistant device lets the next step suggest the sensors.",
           "data": {
             "vehicle_id": "AutoLedger vehicle",
             "device_id": "Home Assistant device (optional)"
           }
         },
         "mapping": {
-          "title": "Sensors of {vehicle_name}",
+          "title": "What Home Assistant sends for {vehicle_name}",
           "description": "Tell AutoLedger which Home Assistant entities describe this vehicle. All of them are optional.\n\n{preview_section}",
           "data": {
             "battery_soc_entity": "Battery level (%)",
@@ -110,7 +110,7 @@
       "abort": {
         "cannot_connect": "Failed to connect to the AutoLedger server. Check that it is reachable, then try again.",
         "invalid_auth": "The AutoLedger server rejected the API token. Re-enter it from the connection settings.",
-        "no_vehicle_available": "No vehicle left to add: every vehicle of the AutoLedger account is already configured, or the account has none.",
+        "no_vehicle_available": "No vehicle left to link: the data of every vehicle of the AutoLedger account is already sent, or the account has none.",
         "reconfigure_successful": "Vehicle updated."
       }
     },
@@ -162,7 +162,7 @@
         "invalid_energy_range": "Energy meter value cannot be negative."
       },
       "abort": {
-        "no_vehicle_configured": "Add a vehicle first: a fixed assignment needs one.",
+        "no_vehicle_configured": "The AutoLedger account has no vehicle yet: a fixed assignment needs one.",
         "reconfigure_successful": "Charging station updated."
       }
     }

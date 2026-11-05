@@ -10,7 +10,11 @@ from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.autoledger.api import AutoLedgerAuthError, AutoLedgerConnectionError
+from custom_components.autoledger.api import (
+    AutoLedgerAuthError,
+    AutoLedgerConnectionError,
+    AutoLedgerError,
+)
 from custom_components.autoledger.const import (
     CONF_API_KEY,
     CONF_HOST,
@@ -24,7 +28,8 @@ from custom_components.autoledger.subentries import (
     vehicles_config,
 )
 
-GET_VEHICLES = "custom_components.autoledger.api.AutoLedgerApiClient.async_get_vehicles"
+API = "custom_components.autoledger.api.AutoLedgerApiClient"
+GET_VEHICLES = f"{API}.async_get_vehicles"
 HOST = "http://autoledger.local:8080"
 SERVER_VEHICLES = [
     {"id": "v1", "make": "Tesla", "model": "Model Y", "name": "Family"},
@@ -212,15 +217,21 @@ async def _add_charger(hass: HomeAssistant, entry: MockConfigEntry, name: str = 
     )
 
 
+async def _fixed_assignment(hass: HomeAssistant, entry: MockConfigEntry, server_vehicles: list):
+    """Start a station and choose the fixed assignment, with the server listing these vehicles."""
+    result = await _add_charger(hass, entry)
+    assert result["step_id"] == "assignment"
+    with patch(f"{API}.async_get_vehicles", new=AsyncMock(return_value=server_vehicles)):
+        return await hass.config_entries.subentries.async_configure(
+            result["flow_id"], {"assignment_mode": "fixed"}
+        )
+
+
 async def test_add_a_charger_assigned_to_a_vehicle(hass: HomeAssistant) -> None:
     entry = _entry()
     entry.add_to_hass(hass)
 
-    result = await _add_charger(hass, entry)
-    assert result["step_id"] == "assignment"
-    result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"], {"assignment_mode": "fixed"}
-    )
+    result = await _fixed_assignment(hass, entry, SERVER_VEHICLES)
     assert result["step_id"] == "assignment_vehicle"
     result = await hass.config_entries.subentries.async_configure(
         result["flow_id"], {"linked_vehicle_id": "v1"}
@@ -234,14 +245,45 @@ async def test_add_a_charger_assigned_to_a_vehicle(hass: HomeAssistant) -> None:
     assert "charger:home_wallbox" in {s.unique_id for s in entry.subentries.values()}
 
 
-async def test_a_fixed_assignment_needs_a_vehicle(hass: HomeAssistant) -> None:
+async def test_a_fixed_assignment_offers_every_vehicle_of_the_account(
+    hass: HomeAssistant,
+) -> None:
+    """No vehicle has to be linked first: the server's vehicles are all offered."""
     entry = _entry(with_vehicle=False)
     entry.add_to_hass(hass)
 
-    result = await _add_charger(hass, entry)
+    result = await _fixed_assignment(hass, entry, SERVER_VEHICLES)
+    assert result["step_id"] == "assignment_vehicle"
+    options = result["data_schema"].schema["linked_vehicle_id"].config["options"]
+    assert {option["value"] for option in options} == {"v1", "v2"}
+
     result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"], {"assignment_mode": "fixed"}
+        result["flow_id"], {"linked_vehicle_id": "v2"}
     )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert chargers_config(entry)["home_wallbox"]["linked_vehicle_id"] == "v2"
+
+
+async def test_a_fixed_assignment_still_offers_the_linked_vehicles_when_the_server_is_down(
+    hass: HomeAssistant,
+) -> None:
+    entry = _entry()
+    entry.add_to_hass(hass)
+    result = await _add_charger(hass, entry)
+    with patch(f"{API}.async_get_vehicles", new=AsyncMock(side_effect=AutoLedgerError("down"))):
+        result = await hass.config_entries.subentries.async_configure(
+            result["flow_id"], {"assignment_mode": "fixed"}
+        )
+
+    options = result["data_schema"].schema["linked_vehicle_id"].config["options"]
+    assert [option["value"] for option in options] == ["v1"]
+
+
+async def test_a_fixed_assignment_needs_a_vehicle_in_the_account(hass: HomeAssistant) -> None:
+    entry = _entry(with_vehicle=False)
+    entry.add_to_hass(hass)
+
+    result = await _fixed_assignment(hass, entry, [])
 
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "no_vehicle_configured"
@@ -396,21 +438,29 @@ async def test_reconfigure_a_charger_keeps_its_id(hass: HomeAssistant) -> None:
     assert entry.subentries[subentry_id].unique_id == "charger:home_wallbox"
 
 
-async def test_deleting_a_vehicle_removes_its_entities(hass: HomeAssistant) -> None:
+async def test_deleting_the_link_of_a_vehicle_keeps_its_figures(hass: HomeAssistant) -> None:
+    """Removing a vehicle subentry stops the sending; the vehicle stays a device with its figures."""
     entry = _entry()
     entry.add_to_hass(hass)
-    api = "custom_components.autoledger.api.AutoLedgerApiClient"
+    hass.config_entries.async_update_subentry(
+        entry,
+        next(iter(entry.subentries.values())),
+        data={"vehicle_id": "v1", "vehicle_name": "Family", "odometer_entity": "sensor.odo"},
+    )
+    hass.states.async_set("sensor.odo", "1000")
     with (
-        patch(f"{api}.async_get_vehicles", new=AsyncMock(return_value=SERVER_VEHICLES)),
-        patch(f"{api}.async_get_vehicle_metrics", new=AsyncMock(return_value={})),
-        patch(f"{api}.async_get_account", new=AsyncMock(return_value={"scope": "ingest"})),
+        patch(f"{API}.async_get_vehicles", new=AsyncMock(return_value=SERVER_VEHICLES)),
+        patch(f"{API}.async_get_vehicle_metrics", new=AsyncMock(return_value={})),
+        patch(f"{API}.async_get_account", new=AsyncMock(return_value={"scope": "ingest"})),
     ):
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-        before = {s.entity_id for s in hass.states.async_all("sensor")}
-        assert before
+        assert hass.states.get("sensor.family_last_odometer_sync") is not None
 
         hass.config_entries.async_remove_subentry(entry, next(iter(entry.subentries)))
         await hass.async_block_till_done()
 
-    assert not {s.entity_id for s in hass.states.async_all("sensor")}
+    assert hass.states.get("sensor.family_last_odometer_sync") is None
+    # both vehicles of the server keep their figures, linked or not
+    assert hass.states.get("sensor.family_cost_per_100km") is not None
+    assert hass.states.get("sensor.work_cost_per_100km") is not None

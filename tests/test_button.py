@@ -116,19 +116,23 @@ async def test_last_sync_sensor_follows_tracker(mock_hass):
 
 def test_stale_entities_removed_only_when_restored(mock_hass):
     entry = ConfigEntry(entry_id="e4", data={CONF_HOST: "h"}, options={})
-    stale = SimpleNamespace(entity_id="sensor.old")
-    live = SimpleNamespace(entity_id="sensor.live")
+    stale = SimpleNamespace(entity_id="sensor.old", unique_id="e4_v1_last_odometer_sync")
+    live = SimpleNamespace(entity_id="sensor.live", unique_id="e4_v1_month_cost")
+    # a vehicle the server stopped listing keeps its figures, even without a live state
+    gone = SimpleNamespace(entity_id="sensor.gone", unique_id="e4_v9_month_cost")
     mock_hass.states.get = MagicMock(
         side_effect=lambda eid: (
             State(eid, "unavailable", attributes={"restored": True})
-            if eid == "sensor.old"
+            if eid in ("sensor.old", "sensor.gone")
             else State(eid, "unavailable")
         )
     )
     registry = MagicMock()
     with (
         patch.object(integration.er, "async_get", return_value=registry),
-        patch.object(integration.er, "async_entries_for_config_entry", return_value=[stale, live]),
+        patch.object(
+            integration.er, "async_entries_for_config_entry", return_value=[stale, live, gone]
+        ),
     ):
         integration._remove_stale_entities(mock_hass, entry)
 

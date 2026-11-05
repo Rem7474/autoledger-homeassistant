@@ -30,6 +30,29 @@ def _parse_version(version: Any) -> tuple[int, int, int] | None:
     return tuple(int(part) for part in match.groups()) if match else None  # type: ignore[return-value]
 
 
+def _amount_number(amount: Any) -> float | None:
+    """Return a read API amount ({"amount": "12.34", "currency"}) as a number."""
+    try:
+        return float(amount["amount"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _metrics_from_summary(item: dict[str, Any]) -> dict[str, Any]:
+    """Shape the last charge and the cost per 100 km of a summary entry like the metrics route."""
+    last = item.get("last_charge") or {}
+    metrics: dict[str, Any] = {
+        "last_charge_cost": _amount_number(last.get("cost")),
+        "energy_kwh": last.get("energy_kwh"),
+        "duration_minutes": last.get("duration_minutes"),
+        "date": last.get("date"),
+        "cost_per_100km": _amount_number(item.get("cost_per_100km")),
+    }
+    if item.get("currency"):
+        metrics["currency"] = item["currency"]
+    return metrics
+
+
 class AutoLedgerDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator to manage fetching AutoLedger data at regular intervals."""
 
@@ -67,33 +90,17 @@ class AutoLedgerDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 str(v.get("id")): v for v in vehicles_list if "id" in v
             }
 
-            metrics_by_id: dict[str, dict[str, Any]] = {}
-
-            # Determine which vehicles to fetch metrics for (configured vehicles + any available)
-            target_ids = set(self.vehicles_config.keys()) | set(vehicles_by_id.keys())
-
-            for vehicle_id in target_ids:
-                if not vehicle_id:
-                    continue
-                try:
-                    metrics = await self.client.async_get_vehicle_metrics(vehicle_id)
-                    metrics_by_id[vehicle_id] = metrics
-                except AutoLedgerAuthError:
-                    raise
-                except AutoLedgerError as err:
-                    _LOGGER.warning("Failed to update metrics for vehicle %s: %s", vehicle_id, err)
-                    metrics_by_id[vehicle_id] = {}
-
             if self.odometer_tracker:
                 for vid, vdata in vehicles_by_id.items():
                     backend_odo = vdata.get("current_odometer")
                     if backend_odo and float(backend_odo) > 0:
                         self.odometer_tracker.set_last_synced_odometer(str(vid), float(backend_odo))
 
+            read_access = await self._async_fetch_read_data(list(vehicles_by_id))
             return {
                 "vehicles": vehicles_by_id,
-                "metrics": metrics_by_id,
-                "read_access": await self._async_fetch_read_data(),
+                "metrics": await self._async_vehicle_metrics(vehicles_by_id),
+                "read_access": read_access,
                 **self._read_data,
             }
 
@@ -105,12 +112,15 @@ class AutoLedgerDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.exception("Unexpected error fetching AutoLedger data: %s", err)
             raise UpdateFailed(f"Unexpected error: {err}") from err
 
-    async def _async_fetch_read_data(self) -> bool:
+    async def _async_fetch_read_data(self, vehicle_ids: list[str]) -> bool:
         """Refresh the figures of the read API; return whether the token can read them.
 
         A token that only pushes ("ingest") cannot read them, nor can a server
         older than the read API: the sensors that depend on them are then not
         created. A transient error keeps the previous figures.
+
+        One call to the summary covers every vehicle. A server older than the
+        summary fields (the month split) is asked vehicle by vehicle instead.
         """
         try:
             account = await self.client.async_get_account()
@@ -126,20 +136,6 @@ class AutoLedgerDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 for item in fleet.get("vehicles", [])
                 if item.get("vehicle_id") is not None
             }
-
-            monthly: dict[str, dict[str, Any]] = {}
-            for vehicle_id in self.vehicles_config:
-                try:
-                    months = (await self.client.async_get_monthly_costs(vehicle_id)).get(
-                        "months", []
-                    )
-                except AutoLedgerAuthError:
-                    raise
-                except AutoLedgerError as err:
-                    _LOGGER.warning("Failed to read the monthly costs of %s: %s", vehicle_id, err)
-                    continue
-                if months:
-                    monthly[vehicle_id] = months[-1]
 
             summary: dict[str, dict[str, Any]] = {}
             try:
@@ -157,6 +153,28 @@ class AutoLedgerDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     if item.get("vehicle_id") is not None
                 }
 
+            monthly: dict[str, dict[str, Any]] = {}
+            for vehicle_id in vehicle_ids:
+                item = summary.get(vehicle_id, {})
+                if isinstance(item.get("month_costs"), dict):
+                    monthly[vehicle_id] = {
+                        "month": item.get("month"),
+                        "in_progress": True,
+                        "costs": item["month_costs"],
+                    }
+                    continue
+                try:
+                    months = (await self.client.async_get_monthly_costs(vehicle_id)).get(
+                        "months", []
+                    )
+                except AutoLedgerAuthError:
+                    raise
+                except AutoLedgerError as err:
+                    _LOGGER.warning("Failed to read the monthly costs of %s: %s", vehicle_id, err)
+                    continue
+                if months:
+                    monthly[vehicle_id] = months[-1]
+
             self._read_data = {
                 "account": account,
                 "reminders": reminders,
@@ -168,6 +186,31 @@ class AutoLedgerDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except AutoLedgerError as err:
             _LOGGER.warning("Failed to read the AutoLedger figures: %s", err)
         return bool(self._read_access)
+
+    async def _async_vehicle_metrics(
+        self, vehicles_by_id: dict[str, dict[str, Any]]
+    ) -> dict[str, dict[str, Any]]:
+        """Last charge and cost per 100 km of each vehicle.
+
+        They come with the summary when the server carries them (the ``last_charge`` key
+        is there, null for a vehicle that cannot charge); otherwise the metrics route is
+        asked for each vehicle that lacks them.
+        """
+        summary = self._read_data.get("summary", {})
+        metrics_by_id: dict[str, dict[str, Any]] = {}
+        for vehicle_id in vehicles_by_id:
+            item = summary.get(vehicle_id, {})
+            if "last_charge" in item:
+                metrics_by_id[vehicle_id] = _metrics_from_summary(item)
+                continue
+            try:
+                metrics_by_id[vehicle_id] = await self.client.async_get_vehicle_metrics(vehicle_id)
+            except AutoLedgerAuthError:
+                raise
+            except AutoLedgerError as err:
+                _LOGGER.warning("Failed to update metrics for vehicle %s: %s", vehicle_id, err)
+                metrics_by_id[vehicle_id] = {}
+        return metrics_by_id
 
     def _check_server_version(self, version: Any) -> None:
         """Raise a repair issue while the server is older than the routes the integration reads."""

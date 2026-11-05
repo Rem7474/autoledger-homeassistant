@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Connexion à AutoLedger",
-        "description": "Autorisez Home Assistant depuis votre compte AutoLedger, ou collez un jeton d'API.",
+        "description": "Autorisez Home Assistant depuis votre compte AutoLedger, ou collez un jeton d'API. Vos véhicules apparaissent ensuite d'eux-mêmes dans Home Assistant ; l'envoi de ce que Home Assistant sait d'un véhicule se configure après, depuis la carte de l'intégration.",
         "menu_options": {
           "oauth": "Autoriser dans AutoLedger (recommandé)",
           "token": "Utiliser un jeton d'API"
@@ -74,22 +74,22 @@
   },
   "config_subentries": {
     "vehicle": {
-      "entry_type": "Véhicule",
+      "entry_type": "Données d'un véhicule envoyées à AutoLedger",
       "initiate_flow": {
-        "user": "Ajouter un véhicule",
-        "reconfigure": "Reconfigurer le véhicule"
+        "user": "Envoyer les données d'un véhicule",
+        "reconfigure": "Reconfigurer les données envoyées"
       },
       "step": {
         "user": {
-          "title": "Ajouter un véhicule",
-          "description": "Choisissez le véhicule AutoLedger. Choisir son appareil Home Assistant permet de pré-remplir les capteurs à l'étape suivante.",
+          "title": "Envoyer les données d'un véhicule",
+          "description": "Chaque véhicule de votre compte AutoLedger est déjà dans Home Assistant avec ses chiffres. Choisissez-en un pour envoyer aussi ce que Home Assistant sait de lui : compteur kilométrique, batterie, trajets et recharges. Choisir son appareil Home Assistant permet à l'étape suivante de suggérer les capteurs.",
           "data": {
             "vehicle_id": "Véhicule AutoLedger",
             "device_id": "Appareil Home Assistant (facultatif)"
           }
         },
         "mapping": {
-          "title": "Capteurs de {vehicle_name}",
+          "title": "Ce que Home Assistant envoie pour {vehicle_name}",
           "description": "Indiquez à AutoLedger quelles entités Home Assistant décrivent ce véhicule. Toutes sont facultatives.\n\n{preview_section}",
           "data": {
             "battery_soc_entity": "Niveau de batterie (%)",
@@ -110,7 +110,7 @@
       "abort": {
         "cannot_connect": "Connexion au serveur AutoLedger impossible. Vérifiez qu'il est joignable, puis réessayez.",
         "invalid_auth": "Le serveur AutoLedger a refusé le jeton d'API. Saisissez-le à nouveau depuis les réglages de connexion.",
-        "no_vehicle_available": "Plus aucun véhicule à ajouter : tous les véhicules du compte AutoLedger sont déjà configurés, ou le compte n'en a aucun.",
+        "no_vehicle_available": "Plus de véhicule à lier : les données de chaque véhicule du compte AutoLedger sont déjà envoyées, ou le compte n'en a aucun.",
         "reconfigure_successful": "Véhicule mis à jour."
       }
     },
@@ -162,7 +162,7 @@
         "invalid_energy_range": "La valeur du compteur d'énergie ne peut pas être négative."
       },
       "abort": {
-        "no_vehicle_configured": "Ajoutez d'abord un véhicule : une attribution fixe en a besoin.",
+        "no_vehicle_configured": "Le compte AutoLedger n'a pas encore de véhicule : une attribution fixe en a besoin.",
         "reconfigure_successful": "Borne mise à jour."
       }
     }

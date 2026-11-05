@@ -50,6 +50,14 @@ from .read_sensors import (
 from .session_tracker import AutoLedgerChargerTracker
 from .subentries import chargers_config, vehicles_config
 from .trip_tracker import AutoLedgerTripTracker
+from .vehicles import (
+    ListedVehicleEntity,
+    async_add_vehicle_entities,
+    listed_vehicles,
+    vehicle_device,
+    vehicle_device_info,
+    vehicle_name,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -74,39 +82,15 @@ async def async_setup_entry(
     configured_chargers: dict[str, Any] = chargers_config(entry)
     entities: list[SensorEntity] = []
 
-    # 1. Sensors per vehicle
+    # 1. What Home Assistant sends for the vehicles it is linked to (config subentries)
     for vehicle_id, vehicle_conf in configured_vehicles.items():
         v_name = vehicle_conf.get(CONF_VEHICLE_NAME, f"Vehicle {vehicle_id}")
-
-        # Retrieve vehicle metadata from coordinator
         vehicle_meta = (
             coordinator.data.get("vehicles", {}).get(vehicle_id, {}) if coordinator.data else {}
         )
-        make = vehicle_meta.get("make")
-        model = vehicle_meta.get("model")
-
-        # Vehicle last charge cost
-        entities.append(
-            AutoLedgerLastChargeCostSensor(
-                coordinator=coordinator,
-                entry=entry,
-                vehicle_id=vehicle_id,
-                vehicle_name=v_name,
-                make=make,
-                model=model,
-            )
-        )
-
-        # Vehicle cost per 100km
-        entities.append(
-            AutoLedgerCostPer100KmSensor(
-                coordinator=coordinator,
-                entry=entry,
-                vehicle_id=vehicle_id,
-                vehicle_name=v_name,
-                make=make,
-                model=model,
-            )
+        v_name = vehicle_name(entry, vehicle_id, vehicle_meta) if vehicle_meta else v_name
+        device_info = _get_vehicle_device_info(
+            entry, vehicle_id, v_name, vehicle_meta.get("make"), vehicle_meta.get("model")
         )
 
         # Last successful odometer push
@@ -117,7 +101,7 @@ async def async_setup_entry(
                     tracker=odometer_tracker,
                     vehicle_id=vehicle_id,
                     vehicle_name=v_name,
-                    device_info=_get_vehicle_device_info(entry, vehicle_id, v_name, make, model),
+                    device_info=device_info,
                 )
             )
 
@@ -129,7 +113,7 @@ async def async_setup_entry(
                     tracker=trip_tracker,
                     vehicle_id=vehicle_id,
                     vehicle_name=v_name,
-                    device_info=_get_vehicle_device_info(entry, vehicle_id, v_name, make, model),
+                    device_info=device_info,
                 )
             )
 
@@ -142,7 +126,7 @@ async def async_setup_entry(
                     tracker=v_tracker,
                     charger_id=vehicle_id,
                     charger_name=v_name,
-                    device_info=_get_vehicle_device_info(entry, vehicle_id, v_name, make, model),
+                    device_info=device_info,
                 )
             )
             entities.append(
@@ -151,7 +135,7 @@ async def async_setup_entry(
                     tracker=v_tracker,
                     charger_id=vehicle_id,
                     charger_name=v_name,
-                    device_info=_get_vehicle_device_info(entry, vehicle_id, v_name, make, model),
+                    device_info=device_info,
                 )
             )
 
@@ -199,39 +183,6 @@ async def async_setup_entry(
 
     if coordinator.data and coordinator.data.get("read_access"):
         entities.append(AutoLedgerPendingChargesSensor(coordinator, entry))
-        for vehicle_id, vehicle_conf in configured_vehicles.items():
-            v_name = vehicle_conf.get(CONF_VEHICLE_NAME, f"Vehicle {vehicle_id}")
-            meta = coordinator.data.get("vehicles", {}).get(vehicle_id, {})
-            device_info = _get_vehicle_device_info(
-                entry, vehicle_id, v_name, meta.get("make"), meta.get("model")
-            )
-            entities.extend(
-                sensor_cls(coordinator, entry, vehicle_id, v_name, device_info)
-                for sensor_cls in (
-                    AutoLedgerRemindersOverdueSensor,
-                    AutoLedgerRemindersDueSoonSensor,
-                    AutoLedgerNextServiceDateSensor,
-                    AutoLedgerNextServiceDistanceSensor,
-                    AutoLedgerMonthCostSensor,
-                    AutoLedgerCostPerKmSensor,
-                )
-            )
-            # The consumption that applies depends on the energy the vehicle uses.
-            powertrain = (
-                coordinator.data.get("summary", {}).get(vehicle_id, {}).get("powertrain") or ""
-            ).upper()
-            if powertrain in ("EV", "PHEV", "REEV"):
-                entities.append(
-                    AutoLedgerConsumptionKwhSensor(
-                        coordinator, entry, vehicle_id, v_name, device_info
-                    )
-                )
-            if powertrain in ("ICE", "PHEV", "REEV"):
-                entities.append(
-                    AutoLedgerConsumptionFuelSensor(
-                        coordinator, entry, vehicle_id, v_name, device_info
-                    )
-                )
     else:
         _LOGGER.info(
             "The API token cannot read the AutoLedger figures: reminder and cost sensors are "
@@ -239,6 +190,63 @@ async def async_setup_entry(
         )
 
     async_add_entities(entities)
+
+    # 3. The figures of every vehicle of the account, including the ones created later
+    def build(vehicle_id: str) -> list[SensorEntity]:
+        return _vehicle_figure_sensors(entry, coordinator, vehicle_id)
+
+    async_add_vehicle_entities(entry, coordinator, async_add_entities, build)
+
+
+def _powertrain(coordinator: AutoLedgerDataUpdateCoordinator, vehicle_id: str) -> str:
+    """Powertrain of a vehicle (EV, ICE, PHEV, REEV), empty while the server did not say."""
+    summary = (coordinator.data or {}).get("summary", {}).get(vehicle_id, {})
+    return str(summary.get("powertrain") or "").upper()
+
+
+def _vehicle_figure_sensors(
+    entry: ConfigEntry, coordinator: AutoLedgerDataUpdateCoordinator, vehicle_id: str
+) -> list[SensorEntity]:
+    """Sensors fed by the server for one vehicle: the last charge, the costs, the reminders."""
+    v_name, device_info = vehicle_device(entry, coordinator, vehicle_id)
+    meta = listed_vehicles(coordinator).get(vehicle_id, {})
+    make, model = meta.get("make"), meta.get("model")
+    powertrain = _powertrain(coordinator, vehicle_id)
+
+    entities: list[SensorEntity] = []
+    # A combustion vehicle has no charge to report
+    if powertrain != "ICE":
+        entities.append(
+            AutoLedgerLastChargeCostSensor(coordinator, entry, vehicle_id, v_name, make, model)
+        )
+    entities.append(
+        AutoLedgerCostPer100KmSensor(coordinator, entry, vehicle_id, v_name, make, model)
+    )
+
+    if not (coordinator.data and coordinator.data.get("read_access")):
+        return entities
+
+    entities.extend(
+        sensor_cls(coordinator, entry, vehicle_id, v_name, device_info)
+        for sensor_cls in (
+            AutoLedgerRemindersOverdueSensor,
+            AutoLedgerRemindersDueSoonSensor,
+            AutoLedgerNextServiceDateSensor,
+            AutoLedgerNextServiceDistanceSensor,
+            AutoLedgerMonthCostSensor,
+            AutoLedgerCostPerKmSensor,
+        )
+    )
+    # The consumption that applies depends on the energy the vehicle uses.
+    if powertrain in ("EV", "PHEV", "REEV"):
+        entities.append(
+            AutoLedgerConsumptionKwhSensor(coordinator, entry, vehicle_id, v_name, device_info)
+        )
+    if powertrain in ("ICE", "PHEV", "REEV"):
+        entities.append(
+            AutoLedgerConsumptionFuelSensor(coordinator, entry, vehicle_id, v_name, device_info)
+        )
+    return entities
 
 
 def _get_vehicle_device_info(
@@ -249,12 +257,7 @@ def _get_vehicle_device_info(
     model: str | None = None,
 ) -> DeviceInfo:
     """Return device info for a vehicle."""
-    return DeviceInfo(
-        identifiers={(DOMAIN, f"{entry.entry_id}_{vehicle_id}")},
-        name=vehicle_name,
-        manufacturer=make or "AutoLedger",
-        model=model or "Vehicle",
-    )
+    return vehicle_device_info(entry, vehicle_id, vehicle_name, make, model)
 
 
 def _get_charger_device_info(
@@ -272,7 +275,7 @@ def _get_charger_device_info(
 
 
 class AutoLedgerLastChargeCostSensor(
-    CoordinatorEntity[AutoLedgerDataUpdateCoordinator], SensorEntity
+    ListedVehicleEntity, CoordinatorEntity[AutoLedgerDataUpdateCoordinator], SensorEntity
 ):
     """Sensor for the financial cost of the last charging session."""
 
@@ -333,7 +336,7 @@ class AutoLedgerLastChargeCostSensor(
 
 
 class AutoLedgerCostPer100KmSensor(
-    CoordinatorEntity[AutoLedgerDataUpdateCoordinator], SensorEntity
+    ListedVehicleEntity, CoordinatorEntity[AutoLedgerDataUpdateCoordinator], SensorEntity
 ):
     """Sensor for the average cost per 100km."""
 
