@@ -37,12 +37,18 @@ from .const import (
 from .coordinator import AutoLedgerDataUpdateCoordinator
 from .odometer_tracker import AutoLedgerOdometerTracker
 from .read_sensors import (
+    AutoLedgerCompletenessSensor,
     AutoLedgerConsumptionFuelSensor,
     AutoLedgerConsumptionKwhSensor,
     AutoLedgerCostPerKmSensor,
+    AutoLedgerLast12MonthsCostSensor,
+    AutoLedgerLastChargePricePerKwhSensor,
     AutoLedgerMonthCostSensor,
+    AutoLedgerMonthDistanceSensor,
+    AutoLedgerNetMonthCostSensor,
     AutoLedgerNextServiceDateSensor,
     AutoLedgerNextServiceDistanceSensor,
+    AutoLedgerOdometerSensor,
     AutoLedgerPendingChargesSensor,
     AutoLedgerRemindersDueSoonSensor,
     AutoLedgerRemindersOverdueSensor,
@@ -235,8 +241,19 @@ def _vehicle_figure_sensors(
             AutoLedgerNextServiceDistanceSensor,
             AutoLedgerMonthCostSensor,
             AutoLedgerCostPerKmSensor,
+            AutoLedgerOdometerSensor,
+            AutoLedgerCompletenessSensor,
+            AutoLedgerMonthDistanceSensor,
+            AutoLedgerNetMonthCostSensor,
+            AutoLedgerLast12MonthsCostSensor,
         )
     )
+    if powertrain != "ICE":
+        entities.append(
+            AutoLedgerLastChargePricePerKwhSensor(
+                coordinator, entry, vehicle_id, v_name, device_info
+            )
+        )
     # The consumption that applies depends on the energy the vehicle uses.
     if powertrain in ("EV", "PHEV", "REEV"):
         entities.append(

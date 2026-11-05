@@ -6,8 +6,9 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import PERCENTAGE, EntityCategory
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -287,6 +288,130 @@ class AutoLedgerConsumptionFuelSensor(AutoLedgerConsumptionKwhSensor):
     _attr_icon = "mdi:gas-station"
     _attr_native_unit_of_measurement = "L/100 km"
     _field = "consumption_l_100km"
+
+
+class AutoLedgerOdometerSensor(_VehicleReadSensor):
+    """Odometer of the vehicle as AutoLedger holds it (the last reading it received)."""
+
+    _key = "odometer"
+    _title = "Odometer"
+    _attr_device_class = SensorDeviceClass.DISTANCE
+    _attr_native_unit_of_measurement = "km"
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_suggested_display_precision = 0
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the odometer; unknown while the server did not report one."""
+        vehicle = (self.coordinator.data or {}).get("vehicles", {}).get(self._vehicle_id, {})
+        value = vehicle.get("current_odometer")
+        return float(value) if isinstance(value, (int, float)) and value > 0 else None
+
+
+class AutoLedgerCompletenessSensor(_VehicleReadSensor):
+    """How much of the vehicle's figures rests on recorded data."""
+
+    _key = "completeness"
+    _title = "Data Completeness"
+    _attr_entity_registry_enabled_default = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:database-check-outline"
+    _attr_native_unit_of_measurement = PERCENTAGE
+
+    @property
+    def native_value(self) -> int | None:
+        """Return the score; unknown when the server has none."""
+        value = self._summary.get("completeness_pct")
+        return value if isinstance(value, int) else None
+
+
+class AutoLedgerMonthDistanceSensor(_VehicleReadSensor):
+    """Distance driven in the month in progress."""
+
+    _key = "month_distance"
+    _title = "Distance This Month"
+    _attr_entity_registry_enabled_default = False
+    _attr_device_class = SensorDeviceClass.DISTANCE
+    _attr_native_unit_of_measurement = "km"
+    _attr_suggested_display_precision = 0
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the distance; unknown on a server that does not report it."""
+        return _distance_km(self._summary.get("month_distance"))
+
+
+class _SummaryAmountSensor(_VehicleReadSensor):
+    """A monetary figure of the summary, in the currency of the vehicle."""
+
+    _attr_entity_registry_enabled_default = False
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_suggested_display_precision = 2
+    _field: str
+
+    def _amount_field(self) -> dict[str, Any] | None:
+        value = self._summary.get(self._field)
+        return value if isinstance(value, dict) else None
+
+    @property
+    def native_unit_of_measurement(self) -> str | None:
+        """Return the currency of the vehicle."""
+        amount = self._amount_field()
+        return amount.get("currency") if amount else self._summary.get("currency")
+
+    @property
+    def native_value(self) -> Decimal | None:
+        """Return the amount; unknown on a server that does not report it."""
+        return _amount(self._amount_field())
+
+
+class AutoLedgerLast12MonthsCostSensor(_SummaryAmountSensor):
+    """Cash spent over the last twelve months, the figure behind the cost per km."""
+
+    _key = "last_12_months_cost"
+    _title = "Cost Last 12 Months"
+    _field = "last_12_months_cost"
+
+
+class AutoLedgerNetMonthCostSensor(_SummaryAmountSensor):
+    """What the month costs once the passengers of the carpools have paid their share."""
+
+    _key = "month_net"
+    _title = "Net Cost This Month"
+    _field = "month_net"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Give the carpool revenue the net figure subtracts."""
+        revenue = _amount(self._summary.get("carpool_revenue_month"))
+        return {"carpool_revenue": str(revenue)} if revenue is not None else {}
+
+
+class AutoLedgerLastChargePricePerKwhSensor(_VehicleReadSensor):
+    """What the latest charge cost per kWh."""
+
+    _key = "last_charge_price_per_kwh"
+    _title = "Last Charge Price Per kWh"
+    _attr_entity_registry_enabled_default = False
+    _attr_icon = "mdi:currency-eur"
+    _attr_suggested_display_precision = 3
+
+    def _price(self) -> dict[str, Any] | None:
+        last = self._summary.get("last_charge")
+        price = last.get("price_per_kwh") if isinstance(last, dict) else None
+        return price if isinstance(price, dict) else None
+
+    @property
+    def native_unit_of_measurement(self) -> str | None:
+        """Return the currency of the vehicle per kWh."""
+        price = self._price()
+        currency = price.get("currency") if price else self._summary.get("currency")
+        return f"{currency}/kWh" if currency else None
+
+    @property
+    def native_value(self) -> Decimal | None:
+        """Return the price; unknown while the cost of the charge is."""
+        return _amount(self._price())
 
 
 class AutoLedgerPendingChargesSensor(

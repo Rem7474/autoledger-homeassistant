@@ -199,6 +199,16 @@ if "homeassistant" not in sys.modules:
         class BinarySensorDeviceClass(StrEnum):
             BATTERY_CHARGING = "battery_charging"
             PLUG = "plug"
+            PROBLEM = "problem"
+
+        class SensorStateClass(StrEnum):
+            MEASUREMENT = "measurement"
+            TOTAL = "total"
+            TOTAL_INCREASING = "total_increasing"
+
+        class EntityCategory(StrEnum):
+            DIAGNOSTIC = "diagnostic"
+            CONFIG = "config"
 
         class SensorEntity:
             _attr_name = None
@@ -211,6 +221,9 @@ if "homeassistant" not in sys.modules:
                 pass
 
         ha.components.sensor.SensorDeviceClass = SensorDeviceClass
+        ha.components.sensor.SensorStateClass = SensorStateClass
+        ha.const.EntityCategory = EntityCategory
+        ha.const.PERCENTAGE = "%"
         ha.components.sensor.SensorEntity = SensorEntity
 
         class ButtonEntity:
