@@ -115,6 +115,7 @@ if "homeassistant" not in sys.modules:
         class Platform(StrEnum):
             BINARY_SENSOR = "binary_sensor"
             BUTTON = "button"
+            CALENDAR = "calendar"
             SENSOR = "sensor"
 
         ha.const.Platform = Platform
