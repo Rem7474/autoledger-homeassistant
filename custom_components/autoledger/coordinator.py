@@ -20,6 +20,7 @@ from .const import (
     DATA_GROUPS,
     DEFAULT_SCAN_INTERVAL_MINUTES,
     DOMAIN,
+    FLEET_KEYS,
     ISSUE_SERVER_TOO_OLD,
     MIN_SERVER_VERSION,
     READ_TOKEN_SCOPES,
@@ -107,6 +108,7 @@ class AutoLedgerDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._schedule_price_change(tariff)
             return {
                 "tariff": tariff,
+                "fleet": await self._async_fetch_fleet() if read_access else None,
                 "vehicles": vehicles_by_id,
                 "metrics": await self._async_vehicle_metrics(vehicles_by_id),
                 "read_access": read_access,
@@ -277,6 +279,18 @@ class AutoLedgerDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise
         except AutoLedgerError as err:
             _LOGGER.warning("Failed to read the current electricity price: %s", err)
+            return None
+
+    async def _async_fetch_fleet(self) -> dict[str, Any] | None:
+        """The household figures, read only while one of their entities is enabled."""
+        if not self._has_key(self._enabled_keys(), FLEET_KEYS):
+            return None
+        try:
+            return await self.client.async_get_fleet()
+        except AutoLedgerAuthError:
+            raise
+        except AutoLedgerError as err:
+            _LOGGER.warning("Failed to read the AutoLedger fleet figures: %s", err)
             return None
 
     def _schedule_price_change(self, tariff: dict[str, Any] | None) -> None:

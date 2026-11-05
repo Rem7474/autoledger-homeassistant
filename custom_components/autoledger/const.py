@@ -129,6 +129,7 @@ PLATFORMS: list[Platform] = [
 
 # The opt-in sections of the summary, with the entities that need each: the server computes a
 # section only for the groups whose entities are enabled.
+FLEET_KEYS = ("fleet_month_cost", "fleet_budget_used", "fleet_over_budget")
 TARIFF_KEYS = ("tariff_price", "tariff_band", "tariff_next_change", "tariff_next_price")
 
 DATA_GROUPS: dict[str, tuple[str, ...]] = {

@@ -764,3 +764,104 @@ class AutoLedgerTariffNextPriceSensor(_TariffPriceSensor):
         """Give the band that starts at the change."""
         band = self._next.get("band")
         return {"band": band} if band else {}
+
+
+class _FleetEntity(CoordinatorEntity[AutoLedgerDataUpdateCoordinator]):
+    """An entity of the household: all the vehicles of the account together."""
+
+    _attr_entity_registry_enabled_default = False
+    _key: str
+    _title: str
+
+    def __init__(self, coordinator: AutoLedgerDataUpdateCoordinator, entry: ConfigEntry) -> None:
+        """Initialize the entity."""
+        super().__init__(coordinator)
+        self._attr_name = f"AutoLedger {self._title}"
+        self._attr_unique_id = f"{entry.entry_id}_{self._key}"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name="AutoLedger",
+            manufacturer="AutoLedger",
+            model="Account",
+        )
+
+    @property
+    def _fleet(self) -> dict[str, Any]:
+        fleet = (self.coordinator.data or {}).get("fleet")
+        return fleet if isinstance(fleet, dict) else {}
+
+    @property
+    def _budget(self) -> dict[str, Any] | None:
+        budget = self._fleet.get("budget")
+        return budget if isinstance(budget, dict) else None
+
+
+class AutoLedgerFleetMonthCostSensor(_FleetEntity, SensorEntity):
+    """What the vehicles of the fleet currency cost so far this month."""
+
+    _key = "fleet_month_cost"
+    _title = "Household Cost This Month"
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_suggested_display_precision = 2
+
+    def _total(self) -> dict[str, Any] | None:
+        currency = self._fleet.get("fleet_currency")
+        for total in self._fleet.get("current_month_totals") or []:
+            if isinstance(total, dict) and total.get("currency") == currency:
+                return total
+        return None
+
+    @property
+    def native_unit_of_measurement(self) -> str | None:
+        """Return the fleet currency."""
+        return self._fleet.get("fleet_currency")
+
+    @property
+    def native_value(self) -> Decimal | None:
+        """Return the cost; unknown while the server has not answered."""
+        total = self._total()
+        return _amount(total.get("current_month_cost")) if total else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Count the vehicles, and name the currencies left out of the sum."""
+        total = self._total()
+        if total is None:
+            return {}
+        return {
+            "vehicles": total.get("vehicles"),
+            "excluded_currencies": [
+                other.get("currency")
+                for other in self._fleet.get("current_month_totals") or []
+                if isinstance(other, dict) and other is not total
+            ],
+        }
+
+
+class AutoLedgerBudgetUsedSensor(_FleetEntity, SensorEntity):
+    """Share of the monthly budget already spent."""
+
+    _key = "fleet_budget_used"
+    _title = "Budget Used"
+    _attr_icon = "mdi:piggy-bank-outline"
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_suggested_display_precision = 0
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the percentage; unknown when no budget is set."""
+        budget = self._budget
+        value = budget.get("used_pct") if budget else None
+        return float(value) if isinstance(value, (int, float)) else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Give the target and what is left of it."""
+        budget = self._budget
+        if not budget:
+            return {}
+        return {
+            "monthly": str(_amount(budget.get("monthly"))),
+            "spent": str(_amount(budget.get("spent_this_month"))),
+            "remaining": str(_amount(budget.get("remaining"))),
+        }

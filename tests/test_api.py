@@ -80,6 +80,15 @@ async def test_summary_asks_for_the_sections_by_name_only_when_given(mock_sessio
 
 
 @pytest.mark.asyncio
+async def test_the_fleet_is_read_from_the_fleet_route(mock_session):
+    mock_session.request.return_value = MockClientResponse(
+        status=200, json_data={"fleet_currency": "EUR"}
+    )
+    assert await _client(mock_session).async_get_fleet() == {"fleet_currency": "EUR"}
+    assert called_urls(mock_session) == ["http://autoledger.local:8080/api/integrations/v1/fleet"]
+
+
+@pytest.mark.asyncio
 async def test_the_current_tariff_and_the_estimate_use_the_read_routes(mock_session):
     """The price now has no parameter; the estimate sends only what was given."""
     mock_session.request.return_value = MockClientResponse(status=200, json_data={"priced": True})
