@@ -51,6 +51,12 @@ if "voluptuous" not in sys.modules:
         def Any(*validators, **kwargs):
             return lambda v: v
 
+        def All(*validators, **kwargs):
+            return lambda v: v
+
+        def Range(**kwargs):
+            return lambda v: v
+
         class Invalid(Exception):
             pass
 
@@ -62,6 +68,8 @@ if "voluptuous" not in sys.modules:
         vol.Optional = Optional
         vol.Coerce = Coerce
         vol.Any = Any
+        vol.All = All
+        vol.Range = Range
         vol.Invalid = Invalid
         vol.MultipleInvalid = MultipleInvalid
         sys.modules["voluptuous"] = vol
