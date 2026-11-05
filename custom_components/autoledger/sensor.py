@@ -37,21 +37,29 @@ from .const import (
 from .coordinator import AutoLedgerDataUpdateCoordinator
 from .odometer_tracker import AutoLedgerOdometerTracker
 from .read_sensors import (
+    AutoLedgerBatteryHealthSensor,
     AutoLedgerCompletenessSensor,
     AutoLedgerConsumptionFuelSensor,
     AutoLedgerConsumptionKwhSensor,
     AutoLedgerCostPerKmSensor,
     AutoLedgerLast12MonthsCostSensor,
     AutoLedgerLastChargePricePerKwhSensor,
+    AutoLedgerLastRecordSensor,
     AutoLedgerMonthCostSensor,
     AutoLedgerMonthDistanceSensor,
     AutoLedgerNetMonthCostSensor,
     AutoLedgerNextServiceDateSensor,
     AutoLedgerNextServiceDistanceSensor,
     AutoLedgerOdometerSensor,
+    AutoLedgerOwnershipCostPerKmSensor,
     AutoLedgerPendingChargesSensor,
     AutoLedgerRemindersDueSoonSensor,
     AutoLedgerRemindersOverdueSensor,
+    AutoLedgerTeslaMateLastSyncSensor,
+    AutoLedgerTiresRemainingDistanceSensor,
+    AutoLedgerTiresReplacementDateSensor,
+    AutoLedgerTiresWearSensor,
+    AutoLedgerVehicleValueSensor,
 )
 from .session_tracker import AutoLedgerChargerTracker
 from .subentries import chargers_config, vehicles_config
@@ -246,8 +254,19 @@ def _vehicle_figure_sensors(
             AutoLedgerMonthDistanceSensor,
             AutoLedgerNetMonthCostSensor,
             AutoLedgerLast12MonthsCostSensor,
+            AutoLedgerTiresWearSensor,
+            AutoLedgerTiresRemainingDistanceSensor,
+            AutoLedgerTiresReplacementDateSensor,
+            AutoLedgerOwnershipCostPerKmSensor,
+            AutoLedgerVehicleValueSensor,
+            AutoLedgerLastRecordSensor,
+            AutoLedgerTeslaMateLastSyncSensor,
         )
     )
+    if powertrain in ("EV", "PHEV", "REEV"):
+        entities.append(
+            AutoLedgerBatteryHealthSensor(coordinator, entry, vehicle_id, v_name, device_info)
+        )
     if powertrain != "ICE":
         entities.append(
             AutoLedgerLastChargePricePerKwhSensor(

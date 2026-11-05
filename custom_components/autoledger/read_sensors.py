@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -11,6 +11,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import PERCENTAGE, EntityCategory
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
 from .coordinator import AutoLedgerDataUpdateCoordinator
@@ -412,6 +413,205 @@ class AutoLedgerLastChargePricePerKwhSensor(_VehicleReadSensor):
     def native_value(self) -> Decimal | None:
         """Return the price; unknown while the cost of the charge is."""
         return _amount(self._price())
+
+
+class _SectionSensor(_VehicleReadSensor):
+    """A figure of an opt-in section of the summary (tires, battery, ownership, sources).
+
+    The section is only read while one of its entities is enabled, so these are off by default.
+    """
+
+    _attr_entity_registry_enabled_default = False
+    _section: str
+
+    @property
+    def _data(self) -> dict[str, Any]:
+        section = self._summary.get(self._section)
+        return section if isinstance(section, dict) else {}
+
+
+class AutoLedgerTiresWearSensor(_SectionSensor):
+    """Wear of the most worn tire mounted on the vehicle."""
+
+    _key = "tires_wear"
+    _title = "Tire Wear"
+    _section = "tires"
+    _attr_icon = "mdi:tire"
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_suggested_display_precision = 0
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the wear; unknown while no tire is mounted or the server has no section."""
+        value = self._data.get("worst_wear_pct")
+        return (
+            float(value) if isinstance(value, (int, float)) and self._data.get("mounted") else None
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Give the condition and the share of the lifespan driven."""
+        data = self._data
+        if not data:
+            return {}
+        return {
+            "condition": data.get("worst_condition"),
+            "life_used_pct": data.get("worst_life_used_pct"),
+            "mounted": data.get("mounted"),
+        }
+
+
+class AutoLedgerTiresRemainingDistanceSensor(_SectionSensor):
+    """Distance left before a mounted tire reaches the legal minimum."""
+
+    _key = "tires_remaining_distance"
+    _title = "Tire Distance Left"
+    _section = "tires"
+    _attr_icon = "mdi:tire"
+    _attr_device_class = SensorDeviceClass.DISTANCE
+    _attr_native_unit_of_measurement = "km"
+    _attr_suggested_display_precision = 0
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the smallest distance left; unknown when it cannot be predicted."""
+        return _distance_km(self._data.get("smallest_remaining_distance"))
+
+
+class AutoLedgerTiresReplacementDateSensor(_SectionSensor):
+    """Day the first mounted tire is expected to need replacing."""
+
+    _key = "tires_replacement_date"
+    _title = "Tire Replacement Date"
+    _section = "tires"
+    _attr_icon = "mdi:calendar-clock"
+    _attr_device_class = SensorDeviceClass.DATE
+
+    @property
+    def native_value(self) -> date | None:
+        """Return the day; unknown when no replacement can be predicted."""
+        return _day(self._data.get("nearest_replacement_date"))
+
+
+class AutoLedgerBatteryHealthSensor(_SectionSensor):
+    """State of health of the traction battery."""
+
+    _key = "battery_health"
+    _title = "Battery Health"
+    _section = "battery"
+    _attr_icon = "mdi:battery-heart-variant"
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the latest health measure; unknown while the server has none."""
+        value = self._data.get("latest_percent")
+        return float(value) if isinstance(value, (int, float)) else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Give the day of the measure and the capacities behind it."""
+        data = self._data
+        if not data:
+            return {}
+        return {
+            "measured_on": data.get("latest_date"),
+            "current_capacity_kwh": data.get("current_capacity_kwh"),
+            "max_capacity_kwh": data.get("max_capacity_kwh"),
+        }
+
+
+class _SectionAmountSensor(_SectionSensor):
+    """A monetary figure of an opt-in section, in the currency of the vehicle."""
+
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_suggested_display_precision = 2
+    _field: str
+
+    def _amount_field(self) -> dict[str, Any] | None:
+        value = self._data.get(self._field)
+        return value if isinstance(value, dict) else None
+
+    @property
+    def native_unit_of_measurement(self) -> str | None:
+        """Return the currency of the vehicle."""
+        amount = self._amount_field()
+        return amount.get("currency") if amount else self._summary.get("currency")
+
+    @property
+    def native_value(self) -> Decimal | None:
+        """Return the amount; unknown when the server cannot estimate it."""
+        return _amount(self._amount_field())
+
+
+class AutoLedgerOwnershipCostPerKmSensor(_SectionAmountSensor):
+    """What a kilometre costs once the purchase is counted."""
+
+    _key = "ownership_cost_per_km"
+    _title = "Full Cost Per Km"
+    _section = "ownership"
+    _field = "full_cost_per_km"
+    _attr_suggested_display_precision = 3
+
+    @property
+    def native_unit_of_measurement(self) -> str | None:
+        """Return the currency of the vehicle per kilometre."""
+        currency = super().native_unit_of_measurement
+        return f"{currency}/km" if currency else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Say whether the depreciation is in the figure, and where a leased mileage stands."""
+        data = self._data
+        if not data:
+            return {}
+        attributes: dict[str, Any] = {"depreciation_known": data.get("depreciation_known")}
+        if isinstance(data.get("mileage"), dict):
+            attributes["mileage"] = data["mileage"]
+        return attributes
+
+
+class AutoLedgerVehicleValueSensor(_SectionAmountSensor):
+    """Estimated resale value of the vehicle today."""
+
+    _key = "vehicle_value"
+    _title = "Estimated Value"
+    _section = "ownership"
+    _field = "current_value"
+
+
+class _SectionTimestampSensor(_SectionSensor):
+    """An instant of the "sources" section."""
+
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _field: str
+
+    @property
+    def native_value(self) -> datetime | None:
+        """Return the instant; unknown when the server has none."""
+        value = self._data.get(self._field)
+        return dt_util.parse_datetime(value) if isinstance(value, str) else None
+
+
+class AutoLedgerLastRecordSensor(_SectionTimestampSensor):
+    """Most recent record of the vehicle, whoever wrote it."""
+
+    _key = "last_record"
+    _title = "Last Record"
+    _section = "sources"
+    _field = "last_record"
+
+
+class AutoLedgerTeslaMateLastSyncSensor(_SectionTimestampSensor):
+    """Last successful synchronization with the TeslaMate instance of the vehicle."""
+
+    _key = "teslamate_last_sync"
+    _title = "TeslaMate Last Sync"
+    _section = "sources"
+    _field = "last_sync"
 
 
 class AutoLedgerPendingChargesSensor(

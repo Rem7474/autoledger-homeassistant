@@ -39,6 +39,14 @@ VEHICLE_FIGURE_KEYS = (
     "last_12_months_cost",
     "last_charge_price_per_kwh",
     "maintenance_overdue",
+    "tires_wear",
+    "tires_remaining_distance",
+    "tires_replacement_date",
+    "battery_health",
+    "ownership_cost_per_km",
+    "vehicle_value",
+    "last_record",
+    "teslamate_last_sync",
 )
 
 

@@ -66,6 +66,20 @@ def _client(mock_session, host="http://autoledger.local:8080"):
 
 
 @pytest.mark.asyncio
+async def test_summary_asks_for_the_sections_by_name_only_when_given(mock_session):
+    """The opt-in sections go in one sorted ``include`` parameter, and none means no parameter."""
+    mock_session.request.return_value = MockClientResponse(status=200, json_data={"vehicles": []})
+    client = _client(mock_session)
+
+    await client.async_get_summary()
+    await client.async_get_summary(["tires", "battery", "tires"])
+
+    first, second = mock_session.request.call_args_list
+    assert "params" not in first.kwargs
+    assert second.kwargs["params"] == {"include": "battery,tires"}
+
+
+@pytest.mark.asyncio
 async def test_validate_reads_the_account_of_the_token(mock_session):
     """A homeassistant token is described by whoami and needs no other call."""
     account = {"scope": "homeassistant", "name": "Rémi", "server_version": "1.60.0"}
