@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from typing import Any
 
 import aiohttp
@@ -222,13 +222,18 @@ class AutoLedgerApiClient:
         res = await self._request("GET", f"{READ_API}/reminders")
         return res if isinstance(res, dict) else {}
 
-    async def async_get_summary(self) -> dict[str, Any]:
+    async def async_get_summary(self, include: Iterable[str] = ()) -> dict[str, Any]:
         """Fetch the figures of every vehicle the token sees in one call (read API).
 
         The server computes them vehicle by vehicle (about thirty queries each), so
-        callers poll it a few times an hour at most.
+        callers poll it a few times an hour at most. ``include`` names the opt-in sections
+        (tires, battery, ownership, sources) to add; a server that does not know them
+        ignores the parameter and the sections are absent.
         """
-        res = await self._request("GET", f"{READ_API}/summary")
+        wanted = ",".join(sorted(set(include)))
+        res = await self._request(
+            "GET", f"{READ_API}/summary", **({"params": {"include": wanted}} if wanted else {})
+        )
         return res if isinstance(res, dict) else {}
 
     async def async_get_monthly_costs(self, vehicle_id: str) -> dict[str, Any]:

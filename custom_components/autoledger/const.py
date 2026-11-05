@@ -125,3 +125,12 @@ PLATFORMS: list[Platform] = [
     Platform.BUTTON,
     Platform.SENSOR,
 ]
+
+# The opt-in sections of the summary, with the entities that need each: the server computes a
+# section only for the groups whose entities are enabled.
+DATA_GROUPS: dict[str, tuple[str, ...]] = {
+    "tires": ("tires_wear", "tires_remaining_distance", "tires_replacement_date"),
+    "battery": ("battery_health",),
+    "ownership": ("ownership_cost_per_km", "vehicle_value"),
+    "sources": ("last_record", "teslamate_last_sync"),
+}

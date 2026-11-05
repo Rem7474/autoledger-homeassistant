@@ -9,11 +9,13 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import AutoLedgerApiClient, AutoLedgerAuthError, AutoLedgerError
 from .const import (
+    DATA_GROUPS,
     DEFAULT_SCAN_INTERVAL_MINUTES,
     DOMAIN,
     ISSUE_SERVER_TOO_OLD,
@@ -139,7 +141,7 @@ class AutoLedgerDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             summary: dict[str, dict[str, Any]] = {}
             try:
-                fleet_summary = await self.client.async_get_summary()
+                fleet_summary = await self.client.async_get_summary(self._enabled_data_groups())
             except AutoLedgerAuthError:
                 raise
             except AutoLedgerError as err:
@@ -211,6 +213,23 @@ class AutoLedgerDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 _LOGGER.warning("Failed to update metrics for vehicle %s: %s", vehicle_id, err)
                 metrics_by_id[vehicle_id] = {}
         return metrics_by_id
+
+    def _enabled_data_groups(self) -> list[str]:
+        """Opt-in sections of the summary that an enabled entity needs.
+
+        A disabled entity costs the server nothing: enabling one reloads the entry, so the
+        next refresh asks for its section.
+        """
+        registry = er.async_get(self.hass)
+        prefix = f"{self.entry_id}_"
+        keys = {
+            entity.unique_id.split("_", 2)[2]
+            for entity in er.async_entries_for_config_entry(registry, self.entry_id)
+            if entity.disabled_by is None
+            and entity.unique_id.startswith(prefix)
+            and entity.unique_id.count("_") >= 2
+        }
+        return [group for group, group_keys in DATA_GROUPS.items() if keys.intersection(group_keys)]
 
     def _check_server_version(self, version: Any) -> None:
         """Raise a repair issue while the server is older than the routes the integration reads."""
