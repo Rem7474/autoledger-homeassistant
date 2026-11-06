@@ -1,5 +1,7 @@
 """Constants for the AutoLedger Home Assistant integration."""
 
+from datetime import timedelta
+
 from homeassistant.const import Platform
 
 DOMAIN = "autoledger"
@@ -131,6 +133,10 @@ PLATFORMS: list[Platform] = [
 # section only for the groups whose entities are enabled.
 FLEET_KEYS = ("fleet_month_cost", "fleet_budget_used", "fleet_over_budget")
 TARIFF_KEYS = ("tariff_price", "tariff_band", "tariff_next_change", "tariff_next_price")
+
+# Tires, battery, ownership and sources change over days: they are read this often at most,
+# whatever the refresh interval (a new group or a new vehicle is read at once)
+SLOW_GROUPS_INTERVAL = timedelta(hours=1)
 
 DATA_GROUPS: dict[str, tuple[str, ...]] = {
     "tires": ("tires_wear", "tires_remaining_distance", "tires_replacement_date"),

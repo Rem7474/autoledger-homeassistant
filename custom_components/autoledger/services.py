@@ -91,6 +91,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
             coordinator = data.get("coordinator")
             if coordinator:
                 _LOGGER.info("Forcing AutoLedger coordinator refresh for entry %s", e_id)
+                coordinator.reset_slow_groups()
                 await coordinator.async_request_refresh()
                 refreshed = True
 
