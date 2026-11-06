@@ -141,6 +141,14 @@ SLOW_GROUPS_INTERVAL = timedelta(hours=1)
 DATA_GROUPS: dict[str, tuple[str, ...]] = {
     "tires": ("tires_wear", "tires_remaining_distance", "tires_replacement_date"),
     "battery": ("battery_health",),
-    "ownership": ("ownership_cost_per_km", "vehicle_value"),
-    "sources": ("last_record", "teslamate_last_sync"),
+    "ownership": (
+        "ownership_cost_per_km",
+        "vehicle_value",
+        "lease_mileage_driven",
+        "lease_excess_projected",
+    ),
+    "sources": ("last_record", "teslamate_last_sync", "teslamate_sync_problem"),
 }
+
+# A TeslaMate synchronization older than this is a problem (the server syncs every 30 minutes by default)
+TESLAMATE_SYNC_STALE_AFTER = timedelta(hours=3)

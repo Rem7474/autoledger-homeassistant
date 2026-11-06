@@ -582,6 +582,74 @@ class AutoLedgerVehicleValueSensor(_SectionAmountSensor):
     _field = "current_value"
 
 
+class AutoLedgerLeaseMileageDrivenSensor(_SectionSensor):
+    """Distance driven since the start of a lease, against the allowance elapsed so far.
+
+    Unknown for a vehicle whose contract has no mileage allowance.
+    """
+
+    _key = "lease_mileage_driven"
+    _title = "Lease Distance Driven"
+    _section = "ownership"
+    _attr_device_class = SensorDeviceClass.DISTANCE
+    _attr_native_unit_of_measurement = "km"
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_suggested_display_precision = 0
+
+    @property
+    def _mileage(self) -> dict[str, Any]:
+        mileage = self._data.get("mileage")
+        return mileage if isinstance(mileage, dict) else {}
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the distance driven under the contract."""
+        return _distance_km(self._mileage.get("driven"))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Give the allowance and how far over (positive) or under (negative) the pace is."""
+        mileage = self._mileage
+        if not mileage:
+            return {}
+        driven = _distance_km(mileage.get("driven"))
+        to_date = _distance_km(mileage.get("allowance_to_date"))
+        return {
+            "allowance_to_date": to_date,
+            "allowance_total": _distance_km(mileage.get("allowance_total")),
+            "allowance_per_year": _distance_km(mileage.get("allowance_per_year")),
+            "over_allowance": (
+                round(driven - to_date, 1) if driven is not None and to_date is not None else None
+            ),
+        }
+
+
+class AutoLedgerLeaseExcessProjectedSensor(_SectionAmountSensor):
+    """What the kilometres above the allowance will cost at the end of the lease at this pace."""
+
+    _key = "lease_excess_projected"
+    _title = "Lease Projected Excess"
+    _section = "ownership"
+    _attr_suggested_display_precision = 2
+
+    def _amount_field(self) -> dict[str, Any] | None:
+        mileage = self._data.get("mileage")
+        value = mileage.get("excess_projected") if isinstance(mileage, dict) else None
+        return value if isinstance(value, dict) else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Give what the excess already costs and the price charged per kilometre."""
+        mileage = self._data.get("mileage")
+        if not isinstance(mileage, dict):
+            return {}
+        accrued, price = mileage.get("excess_accrued"), mileage.get("excess_price_per_km")
+        return {
+            "excess_accrued": _amount(accrued),
+            "excess_price_per_km": _amount(price),
+        }
+
+
 class _SectionTimestampSensor(_SectionSensor):
     """An instant of the "sources" section."""
 

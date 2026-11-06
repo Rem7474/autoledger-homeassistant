@@ -11,8 +11,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN
+from .const import DOMAIN, TESLAMATE_SYNC_STALE_AFTER
 from .coordinator import AutoLedgerDataUpdateCoordinator
 from .vehicles import ListedVehicleEntity, async_add_vehicle_entities, vehicle_device
 
@@ -39,6 +40,7 @@ async def async_setup_entry(
         return [
             AutoLedgerMaintenanceOverdueSensor(coordinator, entry, vehicle_id, name, device_info),
             AutoLedgerDataGapsSensor(coordinator, entry, vehicle_id, name, device_info),
+            AutoLedgerTeslaMateSyncProblemSensor(coordinator, entry, vehicle_id, name, device_info),
         ]
 
     async_add_entities([AutoLedgerOverBudgetSensor(coordinator, entry)])
@@ -88,6 +90,58 @@ class AutoLedgerDataGapsSensor(
             "data_gaps": summary.get("data_gaps"),
             "completeness_pct": summary.get("completeness_pct"),
         }
+
+
+class AutoLedgerTeslaMateSyncProblemSensor(
+    ListedVehicleEntity, CoordinatorEntity[AutoLedgerDataUpdateCoordinator], BinarySensorEntity
+):
+    """On when a vehicle connected to TeslaMate has not synchronized for hours, or never did.
+
+    Read with the "sources" section, so it is off by default. Unknown for a vehicle that is not
+    connected to TeslaMate.
+    """
+
+    _attr_entity_registry_enabled_default = False
+    _attr_device_class = BinarySensorDeviceClass.PROBLEM
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:sync-alert"
+
+    def __init__(
+        self,
+        coordinator: AutoLedgerDataUpdateCoordinator,
+        entry: ConfigEntry,
+        vehicle_id: str,
+        vehicle_name: str,
+        device_info: Any,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._vehicle_id = vehicle_id
+        self._attr_name = f"{vehicle_name} TeslaMate Sync Problem"
+        self._attr_unique_id = f"{entry.entry_id}_{vehicle_id}_teslamate_sync_problem"
+        self._attr_device_info = device_info
+
+    @property
+    def _sources(self) -> dict[str, Any]:
+        summary = (self.coordinator.data or {}).get("summary", {}).get(self._vehicle_id, {})
+        sources = summary.get("sources")
+        return sources if isinstance(sources, dict) else {}
+
+    @property
+    def is_on(self) -> bool | None:
+        """Return whether the last synchronization is missing or older than a few cycles."""
+        sources = self._sources
+        if sources.get("teslamate_connected") is not True:
+            return None
+        last_sync = sources.get("last_sync")
+        synced = dt_util.parse_datetime(last_sync) if isinstance(last_sync, str) else None
+        return synced is None or dt_util.utcnow() - synced > TESLAMATE_SYNC_STALE_AFTER
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Give the instant of the last synchronization."""
+        sources = self._sources
+        return {"last_sync": sources.get("last_sync")} if sources else {}
 
 
 class AutoLedgerMaintenanceOverdueSensor(

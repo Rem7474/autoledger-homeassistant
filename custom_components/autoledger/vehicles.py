@@ -48,6 +48,9 @@ VEHICLE_FIGURE_KEYS = (
     "vehicle_value",
     "last_record",
     "teslamate_last_sync",
+    "lease_mileage_driven",
+    "lease_excess_projected",
+    "teslamate_sync_problem",
 )
 
 

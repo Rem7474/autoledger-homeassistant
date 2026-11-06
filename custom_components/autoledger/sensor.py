@@ -47,6 +47,8 @@ from .read_sensors import (
     AutoLedgerLast12MonthsCostSensor,
     AutoLedgerLastChargePricePerKwhSensor,
     AutoLedgerLastRecordSensor,
+    AutoLedgerLeaseExcessProjectedSensor,
+    AutoLedgerLeaseMileageDrivenSensor,
     AutoLedgerMonthCostSensor,
     AutoLedgerMonthDistanceSensor,
     AutoLedgerNetMonthCostSensor,
@@ -278,6 +280,8 @@ def _vehicle_figure_sensors(
             AutoLedgerVehicleValueSensor,
             AutoLedgerLastRecordSensor,
             AutoLedgerTeslaMateLastSyncSensor,
+            AutoLedgerLeaseMileageDrivenSensor,
+            AutoLedgerLeaseExcessProjectedSensor,
         )
     )
     if powertrain in ("EV", "PHEV", "REEV"):
