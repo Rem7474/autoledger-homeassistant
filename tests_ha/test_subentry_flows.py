@@ -438,6 +438,49 @@ async def test_reconfigure_a_charger_keeps_its_id(hass: HomeAssistant) -> None:
     assert entry.subentries[subentry_id].unique_id == "charger:home_wallbox"
 
 
+async def test_a_charger_names_its_place_from_an_entity_that_can_be_removed(
+    hass: HomeAssistant,
+) -> None:
+    """A new station has no location tag; the place entity is kept, then dropped when cleared."""
+    entry = _entry()
+    entry.add_to_hass(hass)
+    _sensor(hass, "binary_sensor.wallbox", "off")
+    hass.states.async_set("device_tracker.car", "home")
+
+    result = await _start(hass, entry, SUBENTRY_CHARGER)
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        {
+            "charger_name": "Home wallbox",
+            "charging_status_entity": "binary_sensor.wallbox",
+            "location_entity": "device_tracker.car",
+        },
+    )
+    await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {"assignment_mode": "unassigned"}
+    )
+    charger = chargers_config(entry)["home_wallbox"]
+    assert charger["location_entity"] == "device_tracker.car"
+    assert charger["charging_location"] == ""
+    subentry_id = next(
+        s.subentry_id for s in entry.subentries.values() if s.subentry_type == SUBENTRY_CHARGER
+    )
+
+    result = await _start(
+        hass, entry, SUBENTRY_CHARGER, source=SOURCE_RECONFIGURE, subentry_id=subentry_id
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        {"charger_name": "Home wallbox", "charging_status_entity": "binary_sensor.wallbox"},
+    )
+    await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {"assignment_mode": "unassigned"}
+    )
+    await hass.async_block_till_done()
+
+    assert "location_entity" not in chargers_config(entry)["home_wallbox"]
+
+
 async def test_deleting_the_link_of_a_vehicle_keeps_its_figures(hass: HomeAssistant) -> None:
     """Removing a vehicle subentry stops the sending; the vehicle stays a device with its figures."""
     entry = _entry()

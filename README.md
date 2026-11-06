@@ -150,7 +150,8 @@ Each finished trip is sent to AutoLedger with its start/end time and position. T
    - **Charging Energy Sensor (kWh)**: Energy sensor from your wallbox or sub-meter.
    - **Energy Counter Mode**: `Total Increasing` (cumulative kWh) or `Session Energy` (resets per charge). Left empty, it is deduced from the sensor (`measurement` state class = per session).
    - **Solar Anti-Bounce Debounce (seconds)**: Delay timer before finalizing a session (15s - 300s, default: 60s).
-   - **Default Location Tag**: Default location string sent to AutoLedger (default: `home`).
+   - **Place Entity** (optional): An entity whose state names the place of each session, such as the vehicle's `device_tracker` (its zone name) or an `input_text`. Read when the session ends.
+   - **Location Tag**: Fixed place sent when no place entity gives one (empty by default). With neither, AutoLedger names the place after the charging station. A station created before this option keeps the tag `home` it was saved with: clear it to use the station name.
 3. **Step 2: Vehicle Assignment Strategy**:
    - **Fixed**: Select any vehicle of your AutoLedger account; it does not have to be linked for sending first.
    - **Dynamic Selector (input_select)**: Select an `input_select` or sensor entity indicating the vehicle currently connected.

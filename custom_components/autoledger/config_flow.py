@@ -48,6 +48,7 @@ from .const import (
     CONF_ENERGY_METER_TYPE,
     CONF_HOST,
     CONF_LINKED_VEHICLE_ID,
+    CONF_LOCATION_ENTITY,
     CONF_ODOMETER_ENTITY,
     CONF_TOKEN_URL,
     CONF_TRIP_LOCATION_ENTITY,
@@ -818,6 +819,8 @@ class ChargerSubentryFlow(config_entries.ConfigSubentryFlow):
                 charger_id = self._draft.get(CONF_CHARGER_ID) or self._new_charger_id(
                     user_input[CONF_CHARGER_NAME]
                 )
+                # A field left empty is absent from the answer: it must not keep its former value
+                self._draft.pop(CONF_LOCATION_ENTITY, None)
                 self._draft = {
                     **self._draft,
                     **user_input,
@@ -873,6 +876,15 @@ class ChargerSubentryFlow(config_entries.ConfigSubentryFlow):
                         max=MAX_DEBOUNCE_SECONDS,
                         step=5,
                         mode=selector.NumberSelectorMode.SLIDER,
+                    )
+                ),
+                # The state of this entity (a zone name, a text) names the place of each session
+                vol.Optional(
+                    CONF_LOCATION_ENTITY,
+                    description={"suggested_value": draft.get(CONF_LOCATION_ENTITY)},
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain=["device_tracker", "sensor", "input_text", "input_select"]
                     )
                 ),
                 vol.Optional(
