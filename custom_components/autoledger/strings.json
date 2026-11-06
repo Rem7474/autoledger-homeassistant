@@ -130,7 +130,8 @@
             "energy_meter_entity": "Energy sensor (kWh)",
             "energy_meter_type": "Energy counter mode (detected when left empty)",
             "debounce_seconds": "Pause tolerated before a charge ends (seconds)",
-            "charging_location": "Location tag"
+            "location_entity": "Place entity (optional)",
+            "charging_location": "Location tag (when no entity gives the place)"
           }
         },
         "assignment": {

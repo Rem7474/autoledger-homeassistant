@@ -567,7 +567,8 @@ class AutoLedgerChargerTracker:
                 "odometer_km": round(odometer_end, 1) if odometer_end is not None else None,
                 "soc_start": soc_start,
                 "soc_end": soc_end,
-                "location": self.location,
+                # Empty when nothing is configured: AutoLedger then names the place after the charger
+                "location": self.location or None,
                 "meter_device_id": self.energy_meter_entity,
                 "cost": None,
             },
@@ -779,7 +780,7 @@ class AutoLedgerChargerTracker:
         vehicle_id: str | None = None,
     ) -> dict[str, Any]:
         """Submit a manual charging session."""
-        loc = location or self.location
+        loc = location or self.location or None
         target_vid = vehicle_id or self.linked_vehicle_id or self.charger_id
         res = await self.client.async_submit_charge(
             vehicle_id=target_vid,

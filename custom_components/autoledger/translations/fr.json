@@ -130,7 +130,8 @@
             "energy_meter_entity": "Capteur d'énergie (kWh)",
             "energy_meter_type": "Mode du compteur d'énergie (détecté si vide)",
             "debounce_seconds": "Pause tolérée avant la fin d'une charge (secondes)",
-            "charging_location": "Étiquette de lieu"
+            "location_entity": "Entité de lieu (facultative)",
+            "charging_location": "Étiquette de lieu (si aucune entité ne donne le lieu)"
           }
         },
         "assignment": {
