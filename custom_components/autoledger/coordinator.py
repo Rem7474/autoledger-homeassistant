@@ -24,6 +24,7 @@ from .const import (
     ISSUE_SERVER_TOO_OLD,
     MIN_SERVER_VERSION,
     READ_TOKEN_SCOPES,
+    SLOW_GROUPS_INTERVAL,
     TARIFF_KEYS,
 )
 
@@ -88,6 +89,16 @@ class AutoLedgerDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._read_access: bool | None = None
         self._read_data: dict[str, Any] = {}
         self._price_change_cancel: Any = None
+        # The opt-in sections read at the last slow cycle: when, for which groups and vehicles,
+        # and what they said, so the refreshes in between keep showing it
+        self._slow_at: datetime | None = None
+        self._slow_groups: set[str] = set()
+        self._slow_vehicles: set[str] = set()
+        self._slow_sections: dict[str, dict[str, Any]] = {}
+
+    def reset_slow_groups(self) -> None:
+        """Read the slow sections at the next refresh, whatever their age."""
+        self._slow_at = None
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from AutoLedger API and sync periodic telemetry."""
@@ -149,8 +160,10 @@ class AutoLedgerDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             }
 
             summary: dict[str, dict[str, Any]] = {}
+            wanted = set(self._enabled_data_groups())
+            due = self._slow_groups_due(wanted, vehicle_ids)
             try:
-                fleet_summary = await self.client.async_get_summary(self._enabled_data_groups())
+                fleet_summary = await self.client.async_get_summary(sorted(wanted) if due else [])
             except AutoLedgerAuthError:
                 raise
             except AutoLedgerError as err:
@@ -163,6 +176,7 @@ class AutoLedgerDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     for item in fleet_summary.get("vehicles", [])
                     if item.get("vehicle_id") is not None
                 }
+                self._merge_slow_sections(summary, wanted, due, vehicle_ids)
 
             monthly: dict[str, dict[str, Any]] = {}
             for vehicle_id in vehicle_ids:
@@ -248,6 +262,39 @@ class AutoLedgerDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         enabled = self._enabled_keys()
         return [group for group, keys in DATA_GROUPS.items() if self._has_key(enabled, keys)]
+
+    def _slow_groups_due(self, wanted: set[str], vehicle_ids: list[str]) -> bool:
+        """Whether the opt-in sections are to be read now rather than taken from the last read."""
+        if not wanted:
+            return False
+        return (
+            wanted != self._slow_groups
+            or not set(vehicle_ids) <= self._slow_vehicles
+            or self._slow_at is None
+            or dt_util.utcnow() - self._slow_at >= SLOW_GROUPS_INTERVAL
+        )
+
+    def _merge_slow_sections(
+        self,
+        summary: dict[str, dict[str, Any]],
+        wanted: set[str],
+        due: bool,
+        vehicle_ids: list[str],
+    ) -> None:
+        """Remember the sections just read, or put the remembered ones back in the summary."""
+        if due:
+            self._slow_at = dt_util.utcnow()
+            self._slow_groups = set(wanted)
+            self._slow_vehicles = set(vehicle_ids)
+            self._slow_sections = {
+                vehicle_id: {group: item[group] for group in wanted if group in item}
+                for vehicle_id, item in summary.items()
+            }
+            return
+        for vehicle_id, item in summary.items():
+            for group, section in self._slow_sections.get(vehicle_id, {}).items():
+                if group in wanted:
+                    item[group] = section
 
     def _tariff_wanted(self) -> bool:
         """Whether an entity of the price is enabled, or none was created yet.
