@@ -32,7 +32,7 @@ Connect your Home Assistant instance to AutoLedger to automatically detect EV ch
   - Vehicle: `sensor.<vehicle>_overdue_reminders`, `sensor.<vehicle>_reminders_due_soon` (the reminders are listed in the attributes), `sensor.<vehicle>_next_service_date`, `sensor.<vehicle>_next_service_distance`, `sensor.<vehicle>_cost_this_month` (with the split by category in the attributes), `sensor.<vehicle>_cost_per_km` (last 12 months), `sensor.<vehicle>_consumption` (kWh/100 km, electric and plug-in vehicles) and `sensor.<vehicle>_fuel_consumption` (L/100 km, fuel and plug-in vehicles); a figure AutoLedger cannot compute yet reads `unknown`, never 0
   - Vehicle, on by default: `sensor.<vehicle>_odometer` (the last reading AutoLedger holds) and `binary_sensor.<vehicle>_maintenance_overdue` (on while a reminder is past its limit; the overdue reminders are listed in the attributes)
   - Vehicle, created disabled (enable them from the entity settings): `sensor.<vehicle>_distance_this_month`, `sensor.<vehicle>_net_cost_this_month` (the month cost once the passengers of the carpools have paid, with the carpool revenue in the attributes), `sensor.<vehicle>_cost_last_12_months`, `sensor.<vehicle>_last_charge_price_per_kwh` (plug-in vehicles) and `sensor.<vehicle>_data_completeness` (diagnostic). They need an AutoLedger server that reports them and read `unknown` on an older one
-  - Vehicle, created disabled, one group per section the server computes only when asked: tires (`sensor.<vehicle>_tire_wear`, `_tire_distance_left`, `_tire_replacement_date`), battery (`sensor.<vehicle>_battery_health`, plug-in vehicles), ownership (`sensor.<vehicle>_full_cost_per_km`, `_estimated_value`) and sources (`sensor.<vehicle>_last_record`, `_teslamate_last_sync`, diagnostic). The integration asks the server for a group only while one of its entities is enabled, so a disabled entity adds nothing to the server's work; enabling one reloads the integration. They read `unknown` on a server older than these sections
+  - Vehicle, created disabled, one group per section the server computes only when asked: tires (`sensor.<vehicle>_tire_wear`, `_tire_distance_left`, `_tire_replacement_date`), battery (`sensor.<vehicle>_battery_health`, plug-in vehicles), ownership (`sensor.<vehicle>_full_cost_per_km`, `_estimated_value`, and for a lease `_lease_distance_driven` and `_lease_projected_excess`) and sources (`sensor.<vehicle>_last_record`, `_teslamate_last_sync`, `binary_sensor.<vehicle>_teslamate_sync_problem`, diagnostic). The integration asks the server for a group only while one of its entities is enabled, so a disabled entity adds nothing to the server's work; enabling one reloads the integration. They read `unknown` on a server older than these sections
   - Account, electricity price of the default plan: `sensor.autoledger_electricity_price` (on by default, in the currency of the plan per kWh, with the plan name in the attributes), and created disabled `sensor.autoledger_electricity_band`, `sensor.autoledger_electricity_price_next_change` (a timestamp, unknown for a flat plan) and `sensor.autoledger_electricity_next_price`. The server holds the rules of the plan, so Home Assistant only reads the result; it reads the price again at the moment it changes, which makes "charge when it is cheap" automations possible. The price is read only while one of these entities is enabled
   - Vehicle, created disabled: `calendar.<vehicle>_reminders`, one all-day event per maintenance reminder that has a due date (a reminder that only follows a distance has no day to show; the overdue ones keep their past day). The calendar uses the reminders already fetched, so it adds no call
   - Account, household, created disabled: `sensor.autoledger_household_cost_this_month` (the vehicles in the fleet currency, which is the currency of the first vehicle; the other currencies are named in the `excluded_currencies` attribute and never added), `sensor.autoledger_budget_used` (% of the monthly budget, the target and what is left in the attributes) and `binary_sensor.autoledger_over_budget` (on once the budget is exceeded). Both are `unknown` while no budget is set. The fleet route is read only while one of them is enabled
@@ -193,6 +193,24 @@ The main figures are enabled: cost this month, cost per km, consumption, next se
 | `sensor.<vehicle>_fuel_consumption` | - | `L/100 km` | Fuel used per 100 km between full tanks. |
 | `binary_sensor.<vehicle>_data_gaps` | - | - | On when the records lack something that weakens the figures. |
 | `sensor.<vehicle>_last_trip` | `timestamp` | - | End of the last trip sent (only with a trip position entity). Attributes: start time, addresses, coordinates, odometer readings. |
+
+### Optional Entities
+
+A new entity is created **disabled** unless it is marked "on". The integration asks the server only for what an enabled entity needs: a disabled entity adds no call, and enabling one reloads the integration. The groups below (tires, battery, ownership, sources) are read from one request that lists the sections wanted.
+
+| Entity | Needs | Default |
+|---|---|---|
+| `sensor.<vehicle>_odometer`, `binary_sensor.<vehicle>_maintenance_overdue` | the summary | on |
+| `sensor.autoledger_electricity_price` | the current price of the default plan | on |
+| `sensor.<vehicle>_data_completeness`, `_distance_this_month`, `_net_cost_this_month`, `_cost_last_12_months`, `_last_charge_price_per_kwh` | the summary | off |
+| `sensor.autoledger_electricity_band`, `_electricity_price_next_change`, `_electricity_next_price` | the current price | off |
+| `calendar.<vehicle>_reminders` | the reminders already fetched | off |
+| `sensor.autoledger_household_cost_this_month`, `_budget_used`, `binary_sensor.autoledger_over_budget` | the fleet route | off |
+| `sensor.<vehicle>_tire_wear`, `_tire_distance_left`, `_tire_replacement_date` | section `tires` | off |
+| `sensor.<vehicle>_battery_health` (plug-in vehicles) | section `battery` | off |
+| `sensor.<vehicle>_full_cost_per_km`, `_estimated_value` | section `ownership` | off |
+| `sensor.<vehicle>_lease_distance_driven` (with the allowance to date and the gap in the attributes), `sensor.<vehicle>_lease_projected_excess` | section `ownership`; `unknown` for a vehicle whose contract has no mileage allowance | off |
+| `sensor.<vehicle>_last_record`, `_teslamate_last_sync`, `binary_sensor.<vehicle>_teslamate_sync_problem` (on when a TeslaMate vehicle has not synchronized for 3 hours or never did; `unknown` for a vehicle not connected to TeslaMate) | section `sources` | off |
 
 ### Charging Station Entities
 | Sensor Entity ID | Device Class | Unit | Description |
